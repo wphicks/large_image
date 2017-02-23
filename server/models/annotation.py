@@ -90,6 +90,10 @@ class AnnotationSchema:
             'lineWidth': {
                 'type': 'number',
                 'minimum': 0
+            },
+
+            'scalar': {
+                'type': 'number'
             }
         },
         'required': ['type'],

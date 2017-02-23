@@ -1,3 +1,4 @@
+
 import { staticRoot } from 'girder/rest';
 
 import ImageViewerWidget from './base';
@@ -17,7 +18,7 @@ var SlideAtlasImageViewerWidget = ImageViewerWidget.extend({
         }
 
         $.getScript(
-            staticRoot + '/built/plugins/large_image/extra/slideatlas/sa-all.min.js',
+            staticRoot + '/built/plugins/large_image/extra/slideatlas/sa-all.max.js',
             () => this.render()
         );
     },
@@ -53,6 +54,7 @@ var SlideAtlasImageViewerWidget = ImageViewerWidget.extend({
             }
         });
         this.viewer = this.el.saViewer;
+        this.girderGui = new SAM.GirderWidget(this.viewer.GetAnnotationLayer(), this.itemId);
 
         return this;
     },
