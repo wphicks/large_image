@@ -25,6 +25,11 @@ from girder.utility import setting_utilities
 from . import constants
 from .loadmodelcache import invalidateLoadModelCache
 
+try:
+    from . import resource_fuse
+except ImportError:
+    resource_fuse = None
+
 # This is imported from girder.plugins.jobs.constants, but cannot be done
 # until after the plugin has been found and imported.  If using from an
 # entrypoint, the load of this value must be deferred.
@@ -218,3 +223,6 @@ def load(info):
     events.bind('model.file.save.after', 'large_image',
                 checkForLargeImageFiles)
     events.bind('model.item.remove', 'large_image', removeThumbnails)
+
+    if resource_fuse:
+        resource_fuse.startFromConfig()

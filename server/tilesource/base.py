@@ -26,7 +26,7 @@ try:
     import girder
     from girder import logger
     from girder.models.model_base import ValidationException
-    from girder.utility import assetstore_utilities
+    from girder.utility import path as path_util
     from girder.utility.model_importer import ModelImporter
     from ..models.base import TileGeneralException
     from girder.models.model_base import AccessType
@@ -1524,19 +1524,14 @@ if girder:
                 largeImageFile = ModelImporter.model('file').load(
                     largeImageFileId, force=True)
 
+                fileModel = ModelImporter.model('file')
                 # TODO: can we move some of this logic into Girder core?
-                assetstore = ModelImporter.model('assetstore').load(
-                    largeImageFile['assetstoreId'])
-                adapter = assetstore_utilities.getAssetstoreAdapter(assetstore)
-
-                if not isinstance(
-                        adapter,
-                        assetstore_utilities.FilesystemAssetstoreAdapter):
-                    raise TileSourceAssetstoreException(
-                        'Non-filesystem assetstores are not supported')
-
-                largeImagePath = adapter.fullPath(largeImageFile)
-                return largeImagePath
+                adapter = fileModel.getAssetstoreAdapter(largeImageFile)
+                if hasattr(adapter, 'fullPath'):
+                    return adapter.fullPath(largeImageFile)
+                if hasattr(path_util, 'getResourceFusePath'):
+                    return path_util.getResourceFusePath('general', 'file', largeImageFile)
+                raise TileSourceAssetstoreException('Item cannot be accessed as a file')
 
             except TileSourceAssetstoreException:
                 raise
