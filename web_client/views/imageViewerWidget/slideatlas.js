@@ -37,7 +37,7 @@ var SlideAtlasImageViewerWidget = ImageViewerWidget.extend({
         // TODO: if a viewer already exists, do we render again?
         // SlideAtlas bundles its own version of jQuery, which should attach itself to "window.$" when it's sourced
         // The "this.$el" still uses the Girder version of jQuery, which will not have "saViewer" registered on it.
-        window.$(this.el).saViewer({
+        SA.SAViewer(window.$(this.el), {
             zoomWidget: true,
             drawWidget: true,
             prefixUrl: staticRoot + '/built/plugins/large_image/extra/slideatlas/img/',
@@ -55,7 +55,9 @@ var SlideAtlasImageViewerWidget = ImageViewerWidget.extend({
         });
         this.viewer = this.el.saViewer;
         this.girderGui = new SAM.GirderWidget(this.viewer.GetAnnotationLayer(), this.itemId);
-
+        $(this.el).css({'position':'relative'});
+        SA.SAFullScreenButton($(this.el))
+          .css({'position': 'absolute', 'left': '2px', 'top': '2px'});
         return this;
     },
 
