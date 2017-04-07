@@ -202,7 +202,8 @@ def unmountResourceFuse(name):
     if name in fuseMounts:
         path = fuseMounts[name]['path']
         subprocess.call(['fusermount', '-u', os.path.realpath(path)])
-        fuseMounts[name]['fuse'].join()
+        # if it takes logner than 5 seconds, give up on it.
+        fuseMounts[name]['fuse'].join(5)
         # clean up previous processes so there aren't any zombies
         os.waitpid(-1, os.WNOHANG)
         del fuseMounts[name]
@@ -233,11 +234,13 @@ def mountResourceFuse(name, path, level=AccessType.ADMIN, user=None, force=False
             target=fuse.FUSE, args=(ResourceFuse(name), path), kwargs={
                 'foreground': True,
                 # Automatically unmount when python we try to mount again
-                'auto_unmount': True,
+                # This fails inside a Debian docker container in a CentOS host
+                # 'auto_unmount': True,
                 # Cache files if their size and timestamp haven't changed
                 'auto_cache': True,
                 # We aren't specifying our own inos
-                'use_ino': False,
+                # This fails inside a Debian docker container in a CentOS host
+                # 'use_ino': False,
                 # read-only file system
                 'ro': True,
             })
