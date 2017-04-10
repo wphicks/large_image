@@ -202,7 +202,7 @@ def unmountResourceFuse(name):
     if name in fuseMounts:
         path = fuseMounts[name]['path']
         subprocess.call(['fusermount', '-u', os.path.realpath(path)])
-        fuseMounts[name]['fuse'].join()
+        fuseMounts[name]['fuse'].join(10)
         # clean up previous processes so there aren't any zombies
         os.waitpid(-1, os.WNOHANG)
         del fuseMounts[name]
@@ -251,7 +251,7 @@ def mountResourceFuse(name, path, level=AccessType.ADMIN, user=None, force=False
 
 def getResourceFusePath(name, type, doc):
     """
-    Gieven a fuse name and a resource, return the file path.
+    Given a fuse name and a resource, return the file path.
 
     :param name: name used for the fuse mount.
     :param type: the resource model type.
