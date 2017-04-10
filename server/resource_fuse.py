@@ -16,6 +16,8 @@ from girder.utility import config
 from girder.utility.model_importer import ModelImporter
 from girder.utility import path as path_util
 
+from .loadmodelcache import invalidateLoadModelCache
+
 
 fuseMounts = {}
 
@@ -190,6 +192,9 @@ class ResourceFuse(fuse.Operations, ModelImporter):
                 self.openFiles[fh]['handle'].close()
             del self.openFiles[fh]
         return 0
+
+    def destroy(self, path):
+        invalidateLoadModelCache()
 
 
 @atexit.register
