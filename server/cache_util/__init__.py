@@ -39,14 +39,17 @@ def clearCaches():
     """
     if loadmodelcache:
         loadmodelcache.invalidateLoadModelCache()
-    for cls in LruCacheMetaclass.classCaches:
-        LruCacheMetaclass.classCaches[cls].clear()
+    for name in LruCacheMetaclass.namedCaches:
+        LruCacheMetaclass.namedCaches[name].clear()
     if hasattr(tileCache, 'clear'):
-        if tileLock:
-            with tileLock:
+        try:
+            if tileLock:
+                with tileLock:
+                    tileCache.clear()
+            else:
                 tileCache.clear()
-        else:
-            tileCache.clear()
+        except Exception:
+            pass
 
 
 __all__ = ('CacheFactory', 'tileCache', 'tileLock', 'MemCache', 'strhash',
