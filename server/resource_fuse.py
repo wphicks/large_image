@@ -16,20 +16,10 @@ from girder.utility import config
 from girder.utility.model_importer import ModelImporter
 from girder.utility import path as path_util
 
-from . import loadmodelcache
-from .cache_util.cache import LruCacheMetaclass
+from . import cache_util
 
 
 fuseMounts = {}
-
-
-def invalidateCaches():
-    """
-    Invalidate any caches that may have an open file handle.
-    """
-    loadmodelcache.invalidateLoadModelCache()
-    for cls in LruCacheMetaclass.classCaches:
-        LruCacheMetaclass.classCaches[cls].clear()
 
 
 class ResourceFuse(fuse.Operations, ModelImporter):
@@ -204,19 +194,19 @@ class ResourceFuse(fuse.Operations, ModelImporter):
         return 0
 
     def destroy(self, path):
-        invalidateCaches()
+        cache_util.clearCaches()
 
 
 @atexit.register
 def unmountAll():
-    invalidateCaches()
+    cache_util.clearCaches()
     for name in fuseMounts.keys():
         unmountResourceFuse(name)
 
 
 def unmountResourceFuse(name):
     if name in fuseMounts:
-        invalidateCaches()
+        cache_util.clearCaches()
         path = fuseMounts[name]['path']
         subprocess.call(['fusermount', '-u', os.path.realpath(path)])
         fuseMounts[name]['fuse'].join(10)

@@ -17,6 +17,7 @@
 #  limitations under the License.
 ##############################################################################
 
+import datetime
 import json
 import time
 
@@ -28,6 +29,7 @@ from girder.plugins.jobs.constants import JobStatus
 from girder.utility.model_importer import ModelImporter
 
 from .. import constants
+from .. import cache_util
 from ..models.base import TileGeneralException
 
 
@@ -109,12 +111,21 @@ class LargeImageResource(Resource):
         super(LargeImageResource, self).__init__()
 
         self.resourceName = 'large_image'
+        self.route('PUT', ('cache', 'clear'), self.clearCache)
         self.route('GET', ('settings',), self.getPublicSettings)
         self.route('GET', ('thumbnails',), self.countThumbnails)
         self.route('PUT', ('thumbnails',), self.createThumbnails)
         self.route('DELETE', ('thumbnails',), self.deleteThumbnails)
         self.route('DELETE', ('tiles', 'incomplete'),
                    self.deleteIncompleteTiles)
+
+    @describeRoute(
+        Description('Clear tile source caches to release resources and file handles.')
+    )
+    @access.public
+    def clearCache(self, params):
+        cache_util.clearCaches()
+        return {'cacheCleared': datetime.datetime.utcnow()}
 
     @describeRoute(
         Description('Get public settings for large image display.')

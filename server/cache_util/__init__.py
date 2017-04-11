@@ -17,7 +17,12 @@
 #  limitations under the License.
 ###############################################################################
 
-from .cache import LruCacheMetaclass, tileCache, tileLock, strhash, methodcache
+try:
+    from . import loadmodelcache
+except ImportError:
+    loadmodelcache = None
+from .cache import LruCacheMetaclass, tileCache, tileLock, strhash, \
+    methodcache
 try:
     from .memcache import MemCache
 except ImportError:
@@ -26,6 +31,24 @@ from .cachefactory import CacheFactory, pickAvailableCache
 from cachetools import cached, Cache, LRUCache
 
 
+def clearCaches():
+    """
+    Clear the tilesource caches and the load model cache.  Note that this does
+    not clear memcached (which could be done with tileCache._client.flush_all,
+    but this can affect programs other than this one).
+    """
+    if loadmodelcache:
+        loadmodelcache.invalidateLoadModelCache()
+    for cls in LruCacheMetaclass.classCaches:
+        LruCacheMetaclass.classCaches[cls].clear()
+    if hasattr(tileCache, 'clear'):
+        if tileLock:
+            with tileLock:
+                tileCache.clear()
+        else:
+            tileCache.clear()
+
+
 __all__ = ('CacheFactory', 'tileCache', 'tileLock', 'MemCache', 'strhash',
            'LruCacheMetaclass', 'pickAvailableCache', 'cached', 'Cache',
-           'LRUCache', 'methodcache')
+           'LRUCache', 'methodcache', 'clearCaches')
