@@ -199,12 +199,14 @@ class ResourceFuse(fuse.Operations, ModelImporter):
 
 @atexit.register
 def unmountAll():
+    invalidateLoadModelCache()
     for name in fuseMounts.keys():
         unmountResourceFuse(name)
 
 
 def unmountResourceFuse(name):
     if name in fuseMounts:
+        invalidateLoadModelCache()
         path = fuseMounts[name]['path']
         subprocess.call(['fusermount', '-u', os.path.realpath(path)])
         fuseMounts[name]['fuse'].join(10)
