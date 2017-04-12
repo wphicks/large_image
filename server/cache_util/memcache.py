@@ -33,7 +33,7 @@ class MemCache(cachetools.Cache):
     """Use memcached as the backing cache."""
 
     def __init__(self, url='127.0.0.1', username=None, password=None,
-                 missing=None, getsizeof=None):
+                 missing=None, getsizeof=None, mustBeAvailable=False):
         super(MemCache, self).__init__(0, missing, getsizeof)
         if isinstance(url, six.string_types):
             url = [url]
@@ -51,9 +51,13 @@ class MemCache(cachetools.Cache):
         if len(url) > 1:
             behaviors['remove_failed'] = 1
         # name mangling to override 'private variable' __data in cache
-        self._Cache__data = pylibmc.Client(
+        self._client = pylibmc.Client(
             url, binary=True, username=username, password=password,
             behaviors=behaviors)
+        if mustBeAvailable:
+            # Try to set a value; this will throw an error if the server is
+            # unreachable, so we don't bother trying to user it.
+            self._client['large_image_cache_test'] = time.time()
         self.lastError = {}
         self.throttleErrors = 10  # seconds between logging errors
 
@@ -73,7 +77,7 @@ class MemCache(cachetools.Cache):
         return None
 
     def __delitem__(self, key):
-        del self._Cache__data[key]
+        del self._client[key]
 
     def logError(self, err, func, msg):
         """
@@ -103,12 +107,12 @@ class MemCache(cachetools.Cache):
         hexVal = hashObject.hexdigest()
 
         try:
-            return self._Cache__data[hexVal]
+            return self._client[hexVal]
         except KeyError:
             return self.__missing__(key)
         except pylibmc.ServerDown:
-            self.logError(pylibmc.ServerDown, logprint.exception,
-                          'Memcached ServerDown exception')
+            self.logError(pylibmc.ServerDown, logprint.info,
+                          'Memcached ServerDown')
             return self.__missing__(key)
         except pylibmc.Error:
             self.logError(pylibmc.Error, logprint.exception,
@@ -122,7 +126,7 @@ class MemCache(cachetools.Cache):
         hexVal = hashObject.hexdigest()
 
         try:
-            self._Cache__data[hexVal] = value
+            self._client[hexVal] = value
         except TypeError:
             self.logError(
                 TypeError, logprint.error,
@@ -132,8 +136,8 @@ class MemCache(cachetools.Cache):
                 KeyError, logprint.error,
                 'Failed to save value %s with key %s' % (value, hexVal))
         except pylibmc.ServerDown:
-            self.logError(pylibmc.ServerDown, logprint.exception,
-                          'Memcached ServerDown exception')
+            self.logError(pylibmc.ServerDown, logprint.info,
+                          'Memcached ServerDown')
         except pylibmc.Error as exc:
             # memcached won't cache items larger than 1 Mb, but this returns a
             # 'SUCCESS' error.  Raise other errors.

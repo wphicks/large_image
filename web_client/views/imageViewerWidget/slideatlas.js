@@ -72,6 +72,9 @@ var SlideAtlasImageViewerWidget = ImageViewerWidget.extend({
         $(this.el).css({'position':'relative'});
         SA.SAFullScreenButton($(this.el))
           .css({'position': 'absolute', 'left': '2px', 'top': '2px'});
+
+        this.trigger('g:imageRendered', this);
+
         return this;
     },
 
