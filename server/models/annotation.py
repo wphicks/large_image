@@ -91,7 +91,6 @@ class AnnotationSchema:
                 'type': 'number',
                 'minimum': 0
             },
-
             'scalar': {
                 'type': 'number'
             }
