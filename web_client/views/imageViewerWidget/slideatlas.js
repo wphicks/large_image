@@ -47,7 +47,8 @@ var SlideAtlasImageViewerWidget = ImageViewerWidget.extend({
         var tileSource = {
             height: this.sizeY,
             width: this.sizeX,
-            tileSize: this.tileWidth,
+            tileWidth: this.tileWidth,
+            tileHeight: this.tileHeight,
             minLevel: 0,
             maxLevel: this.levels - 1,
             units: 'mm',
