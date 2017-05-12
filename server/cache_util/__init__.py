@@ -21,13 +21,12 @@ try:
     from . import loadmodelcache
 except ImportError:
     loadmodelcache = None
-from .cache import LruCacheMetaclass, tileCache, tileLock, strhash, \
-    methodcache
+from .cache import LruCacheMetaclass, strhash, methodcache, getTileCache
 try:
     from .memcache import MemCache
 except ImportError:
     MemCache = None
-from .cachefactory import CacheFactory, pickAvailableCache
+from .cachefactory import CacheFactory, pickAvailableCache, setConfig, getConfig
 from cachetools import cached, Cache, LRUCache
 
 
@@ -41,7 +40,8 @@ def clearCaches():
         loadmodelcache.invalidateLoadModelCache()
     for name in LruCacheMetaclass.namedCaches:
         LruCacheMetaclass.namedCaches[name].clear()
-    if hasattr(tileCache, 'clear'):
+    tileCache, tileLock = getTileCache()
+    if tileCache and hasattr(tileCache, 'clear'):
         try:
             if tileLock:
                 with tileLock:
@@ -52,6 +52,6 @@ def clearCaches():
             pass
 
 
-__all__ = ('CacheFactory', 'tileCache', 'tileLock', 'MemCache', 'strhash',
+__all__ = ('CacheFactory', 'getTileCache', 'MemCache', 'strhash',
            'LruCacheMetaclass', 'pickAvailableCache', 'cached', 'Cache',
-           'LRUCache', 'methodcache', 'clearCaches')
+           'LRUCache', 'methodcache', 'setConfig', 'getConfig')

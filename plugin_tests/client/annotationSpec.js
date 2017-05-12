@@ -120,6 +120,16 @@ describe('Annotations', function () {
                 ]
             );
         });
+
+        it('point', function () {
+            var obj = largeImage.annotations.geometry.point({
+                type: 'point',
+                id: 'a',
+                center: [1, 2, 0]
+            });
+            expect(obj.type).toBe('Point');
+            expect(obj.coordinates).toEqual([1, 2]);
+        });
     });
 
     describe('style', function () {
@@ -158,54 +168,60 @@ describe('Annotations', function () {
                 lineWidth: 2
             });
             expect(obj).toEqual({
-                lineWidth: 2
+                strokeWidth: 2
             });
         });
     });
 
     describe('convert', function () {
         it('rectangle', function () {
-            var obj = largeImage.annotations.convert([{
+            var element = {
                 type: 'rectangle',
                 id: 'a',
                 center: [10, 20, 0],
                 width: 5,
                 height: 10,
                 rotation: 0
-            }]);
+            };
+            var obj = largeImage.annotations.convert([element]);
             var features = obj.features;
+
             expect(obj.type).toBe('FeatureCollection');
             expect(features.length).toBe(1);
             expect(features[0].id).toBe('a');
 
             var properties = features[0].properties;
-            expect(properties.lineWidth).toBe(2);
+            expect(properties.strokeWidth).toBe(2);
             expect(properties.fillColor).toBe('#000000');
             expect(properties.fillOpacity).toBe(0);
             expect(properties.strokeColor).toBe('#000000');
             expect(properties.strokeOpacity).toBe(1);
+            expect(properties.element).toEqual(element);
         });
 
         it('polyline', function () {
-            var obj = largeImage.annotations.convert([{
+            var element = {
                 type: 'polyline',
                 id: 'a',
                 points: [
                     [0, 1, 0],
                     [1, 0, 0]
                 ]
-            }]);
+            };
+            var obj = largeImage.annotations.convert([element]);
             var features = obj.features;
+
             expect(obj.type).toBe('FeatureCollection');
             expect(features.length).toBe(1);
             expect(features[0].id).toBe('a');
 
             var properties = features[0].properties;
-            expect(properties.lineWidth).toBe(2);
+            expect(properties.strokeWidth).toBe(2);
             expect(properties.fillColor).toBe('#000000');
             expect(properties.fillOpacity).toBe(0);
             expect(properties.strokeColor).toBe('#000000');
             expect(properties.strokeOpacity).toBe(1);
+            expect(properties.element).toEqual(element);
         });
     });
 });
