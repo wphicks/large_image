@@ -41,15 +41,15 @@ def clearCaches():
     for name in LruCacheMetaclass.namedCaches:
         LruCacheMetaclass.namedCaches[name].clear()
     tileCache, tileLock = getTileCache()
-    if tileCache and hasattr(tileCache, 'clear'):
-        try:
+    try:
+        if tileCache and hasattr(tileCache, 'clear'):
             if tileLock:
                 with tileLock:
                     tileCache.clear()
             else:
                 tileCache.clear()
-        except Exception:
-            pass
+    except Exception:
+        pass
 
 
 __all__ = ('CacheFactory', 'getTileCache', 'MemCache', 'strhash',
