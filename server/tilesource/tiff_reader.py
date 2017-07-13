@@ -89,7 +89,7 @@ class TiledTiffDirectory(object):
         'IsByteSwapped', 'IsUpSampled', 'IsMSB2LSB', 'NumberOfStrips'
     ]
 
-    def __init__(self, filePath, directoryNum):
+    def __init__(self, filePath, directoryNum, mustBeTiled=True):
         """
         Create a new reader for a tiled image file directory in a TIFF file.
 
@@ -98,6 +98,8 @@ class TiledTiffDirectory(object):
         :param directoryNum: The number of the TIFF image file directory to
         open.
         :type directoryNum: int
+        :param mustBeTiled: if True, only tiled images validate.  If False,
+            only non-tiled images validate.  None validates both.
         :raises: InvalidOperationTiffException or IOTiffException or
         ValidationTiffException
         """
@@ -106,6 +108,7 @@ class TiledTiffDirectory(object):
         # getTileByteCountsType
 
         self.cache = LRUCache(10)
+        self._mustBeTiled = mustBeTiled
 
         self._tiffFile = None
 
@@ -174,54 +177,57 @@ class TiledTiffDirectory(object):
         # the create_image.py script, such as flatten or colourspace.  These
         # should only be done if necessary, which would require the conversion
         # job to check output and perform subsequent processing as needed.
-        if (self._tiffInfo.get('samplesperpixel') != 1 and
-                self._tiffInfo.get('samplesperpixel') < 3):
-            raise ValidationTiffException(
-                'Only RGB and greyscale TIFF files are supported')
+        if self._mustBeTiled:
+            if (self._tiffInfo.get('samplesperpixel') != 1 and
+                    self._tiffInfo.get('samplesperpixel') < 3):
+                raise ValidationTiffException(
+                    'Only RGB and greyscale TIFF files are supported')
 
-        if self._tiffInfo.get('bitspersample') != 8:
-            raise ValidationTiffException(
-                'Only single-byte sampled TIFF files are supported')
+            if self._tiffInfo.get('bitspersample') != 8:
+                raise ValidationTiffException(
+                    'Only single-byte sampled TIFF files are supported')
 
-        if self._tiffInfo.get('sampleformat') not in (
-                None,  # default is still SAMPLEFORMAT_UINT
-                libtiff_ctypes.SAMPLEFORMAT_UINT):
-            raise ValidationTiffException(
-                'Only unsigned int sampled TIFF files are supported')
+            if self._tiffInfo.get('sampleformat') not in (
+                    None,  # default is still SAMPLEFORMAT_UINT
+                    libtiff_ctypes.SAMPLEFORMAT_UINT):
+                raise ValidationTiffException(
+                    'Only unsigned int sampled TIFF files are supported')
 
-        if self._tiffInfo.get('planarconfig') != libtiff_ctypes.PLANARCONFIG_CONTIG:
-            raise ValidationTiffException(
-                'Only contiguous planar configuration TIFF files are supported')
+            if self._tiffInfo.get('planarconfig') != libtiff_ctypes.PLANARCONFIG_CONTIG:
+                raise ValidationTiffException(
+                    'Only contiguous planar configuration TIFF files are supported')
 
-        if self._tiffInfo.get('photometric') not in (
-                libtiff_ctypes.PHOTOMETRIC_MINISBLACK,
-                libtiff_ctypes.PHOTOMETRIC_RGB,
-                libtiff_ctypes.PHOTOMETRIC_YCBCR):
-            raise ValidationTiffException(
-                'Only greyscale (black is 0), RGB, and YCbCr photometric '
-                'interpretation TIFF files are supported')
+            if self._tiffInfo.get('photometric') not in (
+                    libtiff_ctypes.PHOTOMETRIC_MINISBLACK,
+                    libtiff_ctypes.PHOTOMETRIC_RGB,
+                    libtiff_ctypes.PHOTOMETRIC_YCBCR):
+                raise ValidationTiffException(
+                    'Only greyscale (black is 0), RGB, and YCbCr photometric '
+                    'interpretation TIFF files are supported')
 
-        if self._tiffInfo.get('orientation') != libtiff_ctypes.ORIENTATION_TOPLEFT:
-            raise ValidationTiffException(
-                'Only top-left orientation TIFF files are supported')
+            if self._tiffInfo.get('orientation') != libtiff_ctypes.ORIENTATION_TOPLEFT:
+                raise ValidationTiffException(
+                    'Only top-left orientation TIFF files are supported')
 
-        if self._tiffInfo.get('compression') not in (
-                libtiff_ctypes.COMPRESSION_JPEG, 33003, 33005):
-            raise ValidationTiffException(
-                'Only JPEG compression TIFF files are supported')
+            if self._tiffInfo.get('compression') not in (
+                    libtiff_ctypes.COMPRESSION_JPEG, 33003, 33005):
+                raise ValidationTiffException(
+                    'Only JPEG compression TIFF files are supported')
+            if (not self._tiffInfo.get('istiled') or
+                    not self._tiffInfo.get('tilewidth') or
+                    not self._tiffInfo.get('tilelength')):
+                raise ValidationTiffException('Only tiled TIFF files are supported')
 
-        if (not self._tiffInfo.get('istiled') or
-                not self._tiffInfo.get('tilewidth') or
-                not self._tiffInfo.get('tilelength')):
-            raise ValidationTiffException('Only tiled TIFF files are supported')
-
-        if (self._tiffInfo.get('compression') == libtiff_ctypes.COMPRESSION_JPEG and
-                self._tiffInfo.get('jpegtablesmode') !=
-                libtiff_ctypes.JPEGTABLESMODE_QUANT |
-                libtiff_ctypes.JPEGTABLESMODE_HUFF):
-            raise ValidationTiffException(
-                'Only TIFF files with separate Huffman and quantization '
-                'tables are supported')
+            if (self._tiffInfo.get('compression') == libtiff_ctypes.COMPRESSION_JPEG and
+                    self._tiffInfo.get('jpegtablesmode') !=
+                    libtiff_ctypes.JPEGTABLESMODE_QUANT |
+                    libtiff_ctypes.JPEGTABLESMODE_HUFF):
+                raise ValidationTiffException(
+                    'Only TIFF files with separate Huffman and quantization '
+                    'tables are supported')
+        if self._mustBeTiled is False:
+            if self._tiffInfo.get('istiled'):
+                raise ValidationTiffException('Expected a non-tiled TIFF file')
 
     def _loadMetadata(self):
         fields = [key.split('_', 1)[1].lower() for key in
@@ -248,6 +254,21 @@ class TiledTiffDirectory(object):
         self._imageWidth = info.get('imagewidth')
         self._imageHeight = info.get('imagelength')
         self.parse_image_description(info.get('imagedescription', ''))
+        units = {2: 25.4, 3: 10}
+        if (not self._pixelInfo.get('mm_x') and info.get('xresolution') and
+                units.get(info.get('resolutionunit')) and
+                (info.get('xresolution') not in (72, 96) or
+                 info.get('resolutionunit') != 2)):
+            self._pixelInfo['mm_x'] = units[info['resolutionunit']] / info['xresolution']
+        if (not self._pixelInfo.get('mm_y') and info.get('yresolution') and
+                units.get(info.get('resolutionunit')) and
+                (info.get('yresolution') not in (72, 96) or
+                 info.get('resolutionunit') != 2)):
+            self._pixelInfo['mm_y'] = units[info['resolutionunit']] / info['yresolution']
+        if not self._pixelInfo.get('width') and info.get('imagewidth'):
+            self._pixelInfo['width'] = info['imagewidth']
+        if not self._pixelInfo.get('height') and info.get('imagelength'):
+            self._pixelInfo['height'] = info['imagelength']
 
     @methodcache(key=partial(strhash, '_getJpegTables'))
     def _getJpegTables(self):
