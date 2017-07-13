@@ -94,6 +94,7 @@ class AnnotationSchema:
                 'type': 'number',
                 'minimum': 0
             },
+            'vector': coordSchema,
             'scalar': {
                 'type': 'number'
             }
