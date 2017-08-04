@@ -83,7 +83,7 @@ var ConfigView = View.extend({
                 type: 'success',
                 timeout: 4000
             });
-        }).error((resp) => {
+        }).fail((resp) => {
             this.$('#g-large-image-error-message').text(
                 resp.responseJSON.message
             );
@@ -99,23 +99,19 @@ var ConfigView = View.extend({
             name: 'openseadragon',
             label: 'OpenSeaDragon',
             type: 'openseadragon'
-        },
-        {
+        }, {
             name: 'openlayers',
             label: 'OpenLayers',
             type: 'openlayers'
-        },
-        {
+        }, {
             name: 'leaflet',
             label: 'Leaflet',
             type: 'leaflet'
-        },
-        {
+        }, {
             name: 'geojs',
             label: 'GeoJS',
             type: 'geojs'
-        },
-        {
+        }, {
             name: 'slideatlas',
             label: 'SlideAtlas',
             type: 'slideatlas'
