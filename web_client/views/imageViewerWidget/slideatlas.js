@@ -40,11 +40,6 @@ var SlideAtlasImageViewerWidget = ImageViewerWidget.extend({
             return this;
         }
 
-        if (this.tileWidth !== this.tileHeight) {
-            console.error('The SlideAtlas viewer only supports square tiles.');
-            return this;
-        }
-
         // TODO: if a viewer already exists, do we render again?
         // SlideAtlas bundles its own version of jQuery, which should attach itself to "window.$" when it's sourced
         // The "this.$el" still uses the Girder version of jQuery, which will not have "saViewer" registered on it.
