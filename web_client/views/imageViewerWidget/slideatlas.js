@@ -1,14 +1,9 @@
-
-
-
 import { staticRoot } from 'girder/rest';
 
 import ImageViewerWidget from './base';
 
 var SlideAtlasImageViewerWidget = ImageViewerWidget.extend({
     initialize: function (settings) {
-        ImageViewerWidget.prototype.initialize.call(this, settings);
-
         if (!$('head #large_image-slideatlas-css').length) {
             $('head').prepend(
                 $('<link>', {
@@ -19,10 +14,14 @@ var SlideAtlasImageViewerWidget = ImageViewerWidget.extend({
             );
         }
 
-        $.getScript(
-            staticRoot + '/built/plugins/large_image/extra/slideatlas/sa-all.max.js',
-            () => this.render()
-        );
+        $.when(
+            ImageViewerWidget.prototype.initialize.call(this, settings),
+            $.ajax({  // like $.getScript, but allow caching
+                url: staticRoot + '/built/plugins/large_image/extra/slideatlas/sa-all.max.js',
+                dataType: 'script',
+                cache: true
+            }))
+            .done(() => this.render());
     },
 
     render: function () {
@@ -32,13 +31,18 @@ var SlideAtlasImageViewerWidget = ImageViewerWidget.extend({
         }
 
         // If script or metadata isn't loaded, then abort
-        if (!window.SA || !this.tileWidth || !this.tileHeight) {
-            return;
+        if (!window.SA || !this.tileWidth || !this.tileHeight || this.deleted) {
+            return this;
+        }
+
+        if (this.viewer) {
+            // don't rerender the viewer
+            return this;
         }
 
         if (this.tileWidth !== this.tileHeight) {
             console.error('The SlideAtlas viewer only supports square tiles.');
-            return;
+            return this;
         }
 
         // TODO: if a viewer already exists, do we render again?
@@ -58,20 +62,20 @@ var SlideAtlasImageViewerWidget = ImageViewerWidget.extend({
                 return this._getTileUrl(level, x, y);
             }
         };
-        if ( ! this.mm_x) {
-            //tileSource.units = 'pixels';
+        if (!this.mm_x) {
+            // tileSource.units = 'pixels';
             tileSource.spacing = [1, 1];
         }
-        SA.SAViewer(window.$(this.el), {
+        window.SA.SAViewer(window.$(this.el), {
             zoomWidget: true,
             drawWidget: true,
             prefixUrl: staticRoot + '/built/plugins/large_image/extra/slideatlas/img/',
             tileSource: tileSource
         });
         this.viewer = this.el.saViewer;
-        this.girderGui = new SAM.GirderWidget(this.viewer.GetAnnotationLayer(), this.itemId);
-        $(this.el).css({'position':'relative'});
-        SA.SAFullScreenButton($(this.el))
+        this.girderGui = new window.SAM.GirderWidget(this.viewer.GetAnnotationLayer(), this.itemId);
+        $(this.el).css({position: 'relative'});
+        window.SA.SAFullScreenButton($(this.el))
           .css({'position': 'absolute', 'left': '2px', 'top': '2px'});
 
         this.trigger('g:imageRendered', this);
@@ -84,9 +88,7 @@ var SlideAtlasImageViewerWidget = ImageViewerWidget.extend({
             window.$(this.el).saViewer('destroy');
             this.viewer = null;
         }
-        if (window.SA) {
-            delete window.SA;
-        }
+        this.deleted = true;
         ImageViewerWidget.prototype.destroy.call(this);
     }
 });

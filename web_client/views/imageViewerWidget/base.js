@@ -5,7 +5,7 @@ var ImageViewerWidget = View.extend({
     initialize: function (settings) {
         this.itemId = settings.itemId;
 
-        restRequest({
+        return restRequest({
             type: 'GET',
             path: 'item/' + this.itemId + '/tiles'
         }).done((resp) => {
@@ -16,7 +16,6 @@ var ImageViewerWidget = View.extend({
             this.sizeY = resp.sizeY;
             this.mm_x = resp.mm_x;
             this.mm_y = resp.mm_y;
-            this.render();
         });
     },
 
