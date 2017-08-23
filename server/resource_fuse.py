@@ -39,13 +39,18 @@ class ResourceFuse(fuse.Operations, ModelImporter):
             ret = getattr(self, op)(path, *args)
             return ret
         except OSError as e:
-            ret = str(e)
             if self.log:
-                self.log.exception('-- %s %s', op, ret)
+                if e.errno == errno.ENOENT:
+                    self.log.debug('-- %s %s', op, str(e))
+                else:
+                    self.log.exception('-- %s', op)
             raise
-        except Exception:
+        except Exception as e:
             if self.log:
-                self.log.exception('-- %s', op)
+                if e.errno == errno.ENOENT:
+                    self.log.debug('-- %s %s', op, str(e))
+                else:
+                    self.log.exception('-- %s', op)
             raise
         finally:
             if self.log:
@@ -61,11 +66,11 @@ class ResourceFuse(fuse.Operations, ModelImporter):
                 user=fuseMounts[self.name]['user'],
                 force=fuseMounts[self.name]['force'])
         except path_util.NotFoundException:
-            return fuse.FuseOSError(errno.ENOENT)
+            raise fuse.FuseOSError(errno.ENOENT)
         except ValidationException:
             raise fuse.FuseOSError(errno.EROFS)
         except AccessException:
-            return fuse.FuseOSError(errno.ENOENT)
+            raise fuse.FuseOSError(errno.ENOENT)
         except Exception:
             self.log.exception('ResourceFuse server internal error')
             raise fuse.FuseOSError(errno.EROFS)
