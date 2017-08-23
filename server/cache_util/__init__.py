@@ -30,7 +30,7 @@ from .cachefactory import CacheFactory, pickAvailableCache, setConfig, getConfig
 from cachetools import cached, Cache, LRUCache
 
 
-def clearCaches():
+def clearCaches(*args, **kwargs):
     """
     Clear the tilesource caches and the load model cache.  Note that this does
     not clear memcached (which could be done with tileCache._client.flush_all,

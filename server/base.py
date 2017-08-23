@@ -26,6 +26,7 @@ from girder.models.model_base import ModelImporter, ValidationException
 from girder.utility import setting_utilities
 
 from . import constants
+from . import cache_util
 from .loadmodelcache import invalidateLoadModelCache
 
 try:
@@ -259,6 +260,9 @@ def load(info):
     events.bind('model.file.save.after', 'large_image',
                 checkForLargeImageFiles)
     events.bind('model.item.remove', 'large_image', removeThumbnails)
+
+    events.bind('resource_fuse.destroy', 'large_image', cache_util.clearCaches)
+    events.bind('resource_fuse.unmount', 'large_image', cache_util.clearCaches)
 
     if resource_fuse:
         resource_fuse.startFromConfig()

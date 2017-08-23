@@ -122,7 +122,7 @@ class LargeImageResource(Resource):
     @describeRoute(
         Description('Clear tile source caches to release resources and file handles.')
     )
-    @access.public
+    @access.admin
     def clearCache(self, params):
         cache_util.clearCaches()
         return {'cacheCleared': datetime.datetime.utcnow()}

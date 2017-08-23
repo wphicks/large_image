@@ -9,14 +9,12 @@ import subprocess
 import threading
 import time
 
-from girder import logger, logprint
+from girder import events, logger, logprint
 from girder.constants import AccessType
 from girder.models.model_base import AccessException, ValidationException
 from girder.utility import config
 from girder.utility.model_importer import ModelImporter
 from girder.utility import path as path_util
-
-from . import cache_util
 
 
 fuseMounts = {}
@@ -40,14 +38,14 @@ class ResourceFuse(fuse.Operations, ModelImporter):
             return ret
         except OSError as e:
             if self.log:
-                if e.errno == errno.ENOENT:
+                if getattr(e, 'errno', None) == errno.ENOENT:
                     self.log.debug('-- %s %s', op, str(e))
                 else:
                     self.log.exception('-- %s', op)
             raise
         except Exception as e:
             if self.log:
-                if e.errno == errno.ENOENT:
+                if getattr(e, 'errno', None) == errno.ENOENT:
                     self.log.debug('-- %s %s', op, str(e))
                 else:
                     self.log.exception('-- %s', op)
@@ -65,6 +63,8 @@ class ResourceFuse(fuse.Operations, ModelImporter):
                 path.rstrip('/'), filter=False,
                 user=fuseMounts[self.name]['user'],
                 force=fuseMounts[self.name]['force'])
+        except KeyError:  # This can be triggered when the mount is removed
+            raise fuse.FuseOSError(errno.ENOENT)
         except path_util.NotFoundException:
             raise fuse.FuseOSError(errno.ENOENT)
         except ValidationException:
@@ -199,25 +199,27 @@ class ResourceFuse(fuse.Operations, ModelImporter):
         return 0
 
     def destroy(self, path):
-        cache_util.clearCaches()
+        events.trigger('resource_fuse.destroy', {'path': path})
 
 
 @atexit.register
 def unmountAll():
-    cache_util.clearCaches()
+    events.trigger('resource_fuse.unmount', {'name': None})
     for name in fuseMounts.keys():
         unmountResourceFuse(name)
 
 
 def unmountResourceFuse(name):
-    if name in fuseMounts:
-        cache_util.clearCaches()
-        path = fuseMounts[name]['path']
+    entry = fuseMounts.get(name, None)
+    if entry:
+        events.trigger('resource_fuse.unmount', {'name': name})
+        path = entry['path']
         subprocess.call(['fusermount', '-u', os.path.realpath(path)])
-        fuseMounts[name]['fuse'].join(10)
+        if entry['thread']:
+            entry['thread'].join(10)
         # clean up previous processes so there aren't any zombies
         os.waitpid(-1, os.WNOHANG)
-        del fuseMounts[name]
+        fuseMounts.pop(name, None)
 
 
 def mountResourceFuse(name, path, level=AccessType.ADMIN, user=None, force=False):
@@ -235,13 +237,13 @@ def mountResourceFuse(name, path, level=AccessType.ADMIN, user=None, force=False
         'stat': dict((key, getattr(os.stat(path), key)) for key in (
             'st_atime', 'st_ctime', 'st_gid', 'st_mode', 'st_mtime',
             'st_nlink', 'st_size', 'st_uid')),
-        'fuse': None
+        'thread': None
     }
     try:
         # We run the file system in a thread, but as a foreground process.
         # This allows multiple mounted fuses to play well together and stop
         # when the program is stopped.
-        fuseMounts[name]['fuse'] = threading.Thread(
+        fuseThread = threading.Thread(
             target=fuse.FUSE, args=(ResourceFuse(name), path), kwargs={
                 'foreground': True,
                 # Automatically unmount when python we try to mount again
@@ -253,12 +255,13 @@ def mountResourceFuse(name, path, level=AccessType.ADMIN, user=None, force=False
                 # read-only file system
                 'ro': True,
             })
-        fuseMounts[name]['fuse'].daemon = True
-        fuseMounts[name]['fuse'].start()
+        fuseThread.daemon = True
+        fuseThread.start()
+        fuseMounts[name]['thread'] = fuseThread
         logprint.info('Mounted %s at %s' % (name, path))
     except Exception:
         logger.exception('Failed to mount %s at %s' % (name, path))
-        del fuseMounts[name]
+        fuseMounts.pop(name, None)
 
 
 def getResourceFusePath(name, type, doc):
