@@ -173,61 +173,61 @@ class TiledTiffDirectory(object):
 
         :raises: ValidationTiffException
         """
+        if not self._mustBeTiled:
+            if self._mustBeTiled is not None and self._tiffInfo.get('istiled'):
+                raise ValidationTiffException('Expected a non-tiled TIFF file')
+            return
         # For any non-supported file, we probably can add a conversion task in
         # the create_image.py script, such as flatten or colourspace.  These
         # should only be done if necessary, which would require the conversion
         # job to check output and perform subsequent processing as needed.
-        if self._mustBeTiled:
-            if (self._tiffInfo.get('samplesperpixel') != 1 and
-                    self._tiffInfo.get('samplesperpixel') < 3):
-                raise ValidationTiffException(
-                    'Only RGB and greyscale TIFF files are supported')
+        if (self._tiffInfo.get('samplesperpixel') != 1 and
+                self._tiffInfo.get('samplesperpixel') < 3):
+            raise ValidationTiffException(
+                'Only RGB and greyscale TIFF files are supported')
 
-            if self._tiffInfo.get('bitspersample') != 8:
-                raise ValidationTiffException(
-                    'Only single-byte sampled TIFF files are supported')
+        if self._tiffInfo.get('bitspersample') != 8:
+            raise ValidationTiffException(
+                'Only single-byte sampled TIFF files are supported')
 
-            if self._tiffInfo.get('sampleformat') not in (
-                    None,  # default is still SAMPLEFORMAT_UINT
-                    libtiff_ctypes.SAMPLEFORMAT_UINT):
-                raise ValidationTiffException(
-                    'Only unsigned int sampled TIFF files are supported')
+        if self._tiffInfo.get('sampleformat') not in (
+                None,  # default is still SAMPLEFORMAT_UINT
+                libtiff_ctypes.SAMPLEFORMAT_UINT):
+            raise ValidationTiffException(
+                'Only unsigned int sampled TIFF files are supported')
 
-            if self._tiffInfo.get('planarconfig') != libtiff_ctypes.PLANARCONFIG_CONTIG:
-                raise ValidationTiffException(
-                    'Only contiguous planar configuration TIFF files are supported')
+        if self._tiffInfo.get('planarconfig') != libtiff_ctypes.PLANARCONFIG_CONTIG:
+            raise ValidationTiffException(
+                'Only contiguous planar configuration TIFF files are supported')
 
-            if self._tiffInfo.get('photometric') not in (
-                    libtiff_ctypes.PHOTOMETRIC_MINISBLACK,
-                    libtiff_ctypes.PHOTOMETRIC_RGB,
-                    libtiff_ctypes.PHOTOMETRIC_YCBCR):
-                raise ValidationTiffException(
-                    'Only greyscale (black is 0), RGB, and YCbCr photometric '
-                    'interpretation TIFF files are supported')
+        if self._tiffInfo.get('photometric') not in (
+                libtiff_ctypes.PHOTOMETRIC_MINISBLACK,
+                libtiff_ctypes.PHOTOMETRIC_RGB,
+                libtiff_ctypes.PHOTOMETRIC_YCBCR):
+            raise ValidationTiffException(
+                'Only greyscale (black is 0), RGB, and YCbCr photometric '
+                'interpretation TIFF files are supported')
 
-            if self._tiffInfo.get('orientation') != libtiff_ctypes.ORIENTATION_TOPLEFT:
-                raise ValidationTiffException(
-                    'Only top-left orientation TIFF files are supported')
+        if self._tiffInfo.get('orientation') != libtiff_ctypes.ORIENTATION_TOPLEFT:
+            raise ValidationTiffException(
+                'Only top-left orientation TIFF files are supported')
 
-            if self._tiffInfo.get('compression') not in (
-                    libtiff_ctypes.COMPRESSION_JPEG, 33003, 33005):
-                raise ValidationTiffException(
-                    'Only JPEG compression TIFF files are supported')
-            if (not self._tiffInfo.get('istiled') or
-                    not self._tiffInfo.get('tilewidth') or
-                    not self._tiffInfo.get('tilelength')):
-                raise ValidationTiffException('Only tiled TIFF files are supported')
+        if self._tiffInfo.get('compression') not in (
+                libtiff_ctypes.COMPRESSION_JPEG, 33003, 33005):
+            raise ValidationTiffException(
+                'Only JPEG compression TIFF files are supported')
+        if (not self._tiffInfo.get('istiled') or
+                not self._tiffInfo.get('tilewidth') or
+                not self._tiffInfo.get('tilelength')):
+            raise ValidationTiffException('Only tiled TIFF files are supported')
 
-            if (self._tiffInfo.get('compression') == libtiff_ctypes.COMPRESSION_JPEG and
-                    self._tiffInfo.get('jpegtablesmode') !=
-                    libtiff_ctypes.JPEGTABLESMODE_QUANT |
-                    libtiff_ctypes.JPEGTABLESMODE_HUFF):
-                raise ValidationTiffException(
-                    'Only TIFF files with separate Huffman and quantization '
-                    'tables are supported')
-        if self._mustBeTiled is False:
-            if self._tiffInfo.get('istiled'):
-                raise ValidationTiffException('Expected a non-tiled TIFF file')
+        if (self._tiffInfo.get('compression') == libtiff_ctypes.COMPRESSION_JPEG and
+                self._tiffInfo.get('jpegtablesmode') !=
+                libtiff_ctypes.JPEGTABLESMODE_QUANT |
+                libtiff_ctypes.JPEGTABLESMODE_HUFF):
+            raise ValidationTiffException(
+                'Only TIFF files with separate Huffman and quantization '
+                'tables are supported')
 
     def _loadMetadata(self):
         fields = [key.split('_', 1)[1].lower() for key in
@@ -254,16 +254,18 @@ class TiledTiffDirectory(object):
         self._imageWidth = info.get('imagewidth')
         self._imageHeight = info.get('imagelength')
         self.parse_image_description(info.get('imagedescription', ''))
+        # From TIFF specification, tag 0x128, 2 is inches, 3 is centimeters.
         units = {2: 25.4, 3: 10}
+        # If the resolution value is less than a threshold (100), don't use it,
+        # as it is probably just an inaccurate default.  Values like 72dpi and
+        # 96dpi are common defaults, but so are small metric values, too.
         if (not self._pixelInfo.get('mm_x') and info.get('xresolution') and
                 units.get(info.get('resolutionunit')) and
-                (info.get('xresolution') not in (72, 96) or
-                 info.get('resolutionunit') != 2)):
+                info.get('xresolution') >= 100):
             self._pixelInfo['mm_x'] = units[info['resolutionunit']] / info['xresolution']
         if (not self._pixelInfo.get('mm_y') and info.get('yresolution') and
                 units.get(info.get('resolutionunit')) and
-                (info.get('yresolution') not in (72, 96) or
-                 info.get('resolutionunit') != 2)):
+                info.get('yresolution') >= 100):
             self._pixelInfo['mm_y'] = units[info['resolutionunit']] / info['yresolution']
         if not self._pixelInfo.get('width') and info.get('imagewidth'):
             self._pixelInfo['width'] = info['imagewidth']
