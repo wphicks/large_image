@@ -24,7 +24,7 @@ from girder.api import access
 from girder.api.describe import describeRoute, Description
 from girder.api.rest import Resource, loadmodel, filtermodel, RestException
 from girder.constants import AccessType, SortDir
-from girder.models.model_base import ValidationException
+from girder.models.model_base import AccessException, ValidationException
 from ..models.annotation import AnnotationSchema
 
 
@@ -122,6 +122,7 @@ class AnnotationResource(Resource):
         .errorResponse('Read access was denied for the annotation.', 403)
         .notes('Use "size" or "details" as possible sort keys.')
     )
+    @access.cookie
     @access.public
     @filtermodel(model='annotation', plugin='large_image')
     def getAnnotation(self, id, params):
@@ -155,8 +156,8 @@ class AnnotationResource(Resource):
         except ValidationException as exc:
             logger.exception('Failed to validate annotation')
             raise RestException(
-                'Validation Error: JSON doesn\'t follow schema (%s).' % (
-                    exc.message, ))
+                'Validation Error: JSON doesn\'t follow schema (%r).' % (
+                    exc.args, ))
 
     @describeRoute(
         Description('Update an annotation or move it to a different item.')
@@ -192,8 +193,8 @@ class AnnotationResource(Resource):
         except ValidationException as exc:
             logger.exception('Failed to validate annotation')
             raise RestException(
-                'Validation Error: JSON doesn\'t follow schema (%s).' % (
-                    exc.message, ))
+                'Validation Error: JSON doesn\'t follow schema (%r).' % (
+                    exc.args, ))
         return annotation
 
     @describeRoute(
@@ -241,10 +242,13 @@ class AnnotationResource(Resource):
             if annotation['itemId'] in imageIds:
                 continue
 
-            item = self.model('image_item', 'large_image').load(
-                annotation['itemId'], level=AccessType.READ,
-                user=user
-            )
+            try:
+                item = self.model('image_item', 'large_image').load(
+                    annotation['itemId'], level=AccessType.READ,
+                    user=user
+                )
+            except AccessException:
+                item = None
 
             # ignore if no such item exists
             if not item:

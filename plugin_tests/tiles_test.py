@@ -17,8 +17,11 @@
 #  limitations under the License.
 #############################################################################
 
+import itertools
 import json
+import numpy
 import os
+import PIL.Image
 import shutil
 import six
 import struct
@@ -702,6 +705,33 @@ class LargeImageTilesTest(common.LargeImageCommonTest):
         self.assertStatus(resp, 400)
         self.assertIn('tile size is too large', resp.json['message'])
 
+    def testTilesFromPNGs(self):
+        # A PNG in L, LA, RGB, RGBA should work in both 8 and 16 bits-per-pixel
+        for mode, bits in itertools.product(('L', 'LA', 'RGB', 'RGBA'), (8, 16)):
+            file = self._uploadFile(os.path.join(
+                os.path.dirname(__file__), 'test_files', 'test_%s_%d.png' % (mode, bits)))
+            itemId = str(file['itemId'])
+            fileId = str(file['_id'])
+            # Ask to make this a tile-based item
+            resp = self.request(path='/item/%s/tiles' % itemId, method='POST',
+                                user=self.admin, params={'fileId': fileId})
+            self.assertStatusOk(resp)
+            # Get the tile and check that it is what we expect
+            resp = self.request(path='/item/%s/tiles/zxy/0/0/0' % itemId,
+                                user=self.admin, isJson=False,
+                                params={'encoding': 'PNG'})
+            self.assertStatusOk(resp)
+            image = self.getBody(resp, text=False)
+            self.assertEqual(image[:len(common.PNGHeader)], common.PNGHeader)
+            (width, height) = struct.unpack('!LL', image[16:24])
+            self.assertEqual(width, 64)
+            self.assertEqual(height, 64)
+            data = numpy.ndarray.flatten(numpy.asarray(PIL.Image.open(six.BytesIO(image))))
+            self.assertGreaterEqual(len(data), len(mode) * width * height)
+            self.assertEqual(data[0], 0)
+            self.assertEqual(data[len(data) / width / height], 2)
+            self.assertEqual(data[-len(data) / width / height], 255)
+
     def testDummyTileSource(self):
         # We can't actually load the dummy source via the endpoints if we have
         # all of the requirements installed, so just check that it exists and
@@ -799,6 +829,42 @@ class LargeImageTilesTest(common.LargeImageCommonTest):
         self.assertEqual(width, 180)
         self.assertEqual(height, int(width * origHeight / origWidth))
 
+        # Test asking for fill values
+        resp = self.request(path='/item/%s/tiles/thumbnail' % itemId,
+                            user=self.admin, isJson=False,
+                            params={'encoding': 'PNG',
+                                    'width': 180, 'height': 180,
+                                    'fill': 'none'})
+        self.assertStatusOk(resp)
+        image = self.getBody(resp, text=False)
+        self.assertEqual(image[:len(common.PNGHeader)], common.PNGHeader)
+        (width, height) = struct.unpack('!LL', image[16:24])
+        self.assertEqual(width, 180)
+        self.assertEqual(height, int(width * origHeight / origWidth))
+        resp = self.request(path='/item/%s/tiles/thumbnail' % itemId,
+                            user=self.admin, isJson=False,
+                            params={'encoding': 'PNG',
+                                    'width': 180, 'height': 180,
+                                    'fill': 'pink'})
+        self.assertStatusOk(resp)
+        image = self.getBody(resp, text=False)
+        self.assertEqual(image[:len(common.PNGHeader)], common.PNGHeader)
+        (width, height) = struct.unpack('!LL', image[16:24])
+        self.assertEqual(width, 180)
+        self.assertEqual(height, 180)
+        resp = self.request(path='/item/%s/tiles/thumbnail' % itemId,
+                            user=self.admin, isJson=False,
+                            params={'encoding': 'PNG',
+                                    'width': 180, 'height': 180,
+                                    'fill': '#ffff00'})
+        self.assertStatusOk(resp)
+        nextimage = self.getBody(resp, text=False)
+        self.assertEqual(nextimage[:len(common.PNGHeader)], common.PNGHeader)
+        (width, height) = struct.unpack('!LL', nextimage[16:24])
+        self.assertEqual(width, 180)
+        self.assertEqual(height, 180)
+        self.assertNotEqual(image, nextimage)
+
         # Test bad parameters
         badParams = [
             ({'encoding': 'invalid'}, 400, 'Invalid encoding'),
@@ -810,6 +876,7 @@ class LargeImageTilesTest(common.LargeImageCommonTest):
             ({'height': -5}, 400, 'Invalid width or height'),
             ({'jpegQuality': 'invalid'}, 400, 'incorrect type'),
             ({'jpegSubsampling': 'invalid'}, 400, 'incorrect type'),
+            ({'fill': 'not a color'}, 400, 'unknown color'),
         ]
         for entry in badParams:
             resp = self.request(path='/item/%s/tiles/thumbnail' % itemId,
@@ -826,7 +893,7 @@ class LargeImageTilesTest(common.LargeImageCommonTest):
         self.assertEqual(image[:len(common.JPEGHeader)], common.JPEGHeader)
         self.assertEqual(len(image), defaultLength)
 
-        # We should report one thumbnail
+        # We should report some thumbnails
         item = self.model('item').load(itemId, user=self.admin)
         present, removed = self.model(
             'image_item', 'large_image').removeThumbnailFiles(item, keep=10)
@@ -946,6 +1013,36 @@ class LargeImageTilesTest(common.LargeImageCommonTest):
         self.assertEqual(width, 500)
         self.assertEqual(height, 375)
 
+        # Test fill
+        params['fill'] = 'none'
+        resp = self.request(path='/item/%s/tiles/region' % itemId,
+                            user=self.admin, isJson=False, params=params)
+        self.assertStatusOk(resp)
+        image = self.getBody(resp, text=False)
+        self.assertEqual(image[:len(common.PNGHeader)], common.PNGHeader)
+        (width, height) = struct.unpack('!LL', image[16:24])
+        self.assertEqual(width, 500)
+        self.assertEqual(height, 375)
+        params['fill'] = '#ff00ff'
+        resp = self.request(path='/item/%s/tiles/region' % itemId,
+                            user=self.admin, isJson=False, params=params)
+        self.assertStatusOk(resp)
+        image = self.getBody(resp, text=False)
+        self.assertEqual(image[:len(common.PNGHeader)], common.PNGHeader)
+        (width, height) = struct.unpack('!LL', image[16:24])
+        self.assertEqual(width, 500)
+        self.assertEqual(height, 500)
+        params['regionWidth'] = 1500
+        resp = self.request(path='/item/%s/tiles/region' % itemId,
+                            user=self.admin, isJson=False, params=params)
+        self.assertStatusOk(resp)
+        nextimage = self.getBody(resp, text=False)
+        self.assertEqual(nextimage[:len(common.PNGHeader)], common.PNGHeader)
+        (width, height) = struct.unpack('!LL', image[16:24])
+        self.assertEqual(width, 500)
+        self.assertEqual(height, 500)
+        self.assertNotEqual(image, nextimage)
+
         # test svs image
         file = self._uploadFile(os.path.join(
             os.environ['LARGE_IMAGE_DATA'], 'sample_svs_image.TCGA-DU-6399-'
@@ -1014,6 +1111,14 @@ class LargeImageTilesTest(common.LargeImageCommonTest):
         image, mime = source.getThumbnail(encoding='JPEG', width=200)
         self.assertEqual(image[:len(common.JPEGHeader)], common.JPEGHeader)
 
+        # Test the level0 thumbnail code path
+        image, mime = source.getThumbnail(
+            encoding='PNG', width=200, height=100, levelZero=True, fill='blue')
+        self.assertEqual(image[:len(common.PNGHeader)], common.PNGHeader)
+        (width, height) = struct.unpack('!LL', image[16:24])
+        self.assertEqual(width, 200)
+        self.assertEqual(height, 100)
+
     def testTilesLoadModelCache(self):
         from girder.plugins.large_image import loadmodelcache
         loadmodelcache.invalidateLoadModelCache()
@@ -1028,8 +1133,8 @@ class LargeImageTilesTest(common.LargeImageCommonTest):
         tileMetadata = resp.json
         tileMetadata['sparse'] = 5
         self._testTilesZXY(itemId, tileMetadata, token=token)
-        self.assertGreater(loadmodelcache.LoadModelCache[
-            loadmodelcache.LoadModelCache.keys()[0]]['hits'], 70)
+        self.assertGreater(six.next(six.itervalues(
+            loadmodelcache.LoadModelCache))['hits'], 70)
 
     def testTilesAutoSetOption(self):
         from girder.plugins.large_image import constants
