@@ -97,7 +97,8 @@ class AnnotationSchema:
             'vector': coordSchema,
             'scalar': {
                 'type': 'number'
-            }
+            },
+            'group': {'type': 'string'}
         },
         'required': ['type'],
         'additionalProperties': True

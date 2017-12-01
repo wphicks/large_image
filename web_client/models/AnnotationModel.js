@@ -75,6 +75,9 @@ export default Model.extend({
         }
         this._inFetch = true;
         return restRequest(restOpts).done((resp) => {
+            const annotation = resp.annotation || {};
+            const elements = annotation.elements || [];
+
             this.set(resp);
             if (this._pageElements === undefined && resp._elementQuery) {
                 this._pageElements = resp._elementQuery.count > resp._elementQuery.returned;
@@ -84,6 +87,8 @@ export default Model.extend({
             } else {
                 this.trigger('g:fetched');
             }
+
+            this._elements.reset(elements, _.extend({sync: true}, opts));
         }).fail((err) => {
             this.trigger('g:error', err);
         }).always(() => {
@@ -94,6 +99,84 @@ export default Model.extend({
                 nextFetch();
             }
         });
+    },
+
+    /**
+     * Perform a PUT or POST request on the annotation data depending
+     * on whether the annotation is new or not.  This mirrors somewhat
+     * the api of `Backbone.Model.save`.  For new models, the `itemId`
+     * attribute is required.
+     */
+    save(options) {
+        const data = _.extend({}, this.get('annotation'));
+        let url;
+        let method;
+
+        // we don't want to override an annotation with a partial response
+        if (this._pageElements) {
+            throw new Error('Cannot save a paged annotation');
+        }
+
+        if (this.isNew()) {
+            if (!this.get('itemId')) {
+                throw new Error('itemId is required to save new annotations');
+            }
+            url = `annotation?itemId=${this.get('itemId')}`;
+            method = 'POST';
+        } else {
+            url = `annotation/${this.id}`;
+            method = 'PUT';
+        }
+
+        data.elements = _.map(data.elements, (element) => {
+            element = _.extend({}, element);
+            if (element.label && !element.label.value) {
+                delete element.label;
+            }
+            return element;
+        });
+
+        return restRequest({
+            url,
+            method,
+            contentType: 'application/json',
+            processData: false,
+            data: JSON.stringify(data)
+        }).done((annotation) => {
+            // the elements array does not come back with this request
+            annotation.elements = (this.get('annotation') || {}).elements || [];
+            this.set(annotation);
+            this.trigger('sync', this, annotation, options);
+        });
+    },
+
+    /**
+     * Perform a DELETE request on the annotation model and remove all
+     * event listeners.  This mirrors the api of `Backbone.Model.destroy`
+     * without the backbone specific options, which are not supported by
+     * girder's base model either.
+     */
+    destroy(options) {
+        this.stopListening();
+        this.trigger('destroy', this, this.collection, options);
+        return this.delete(options);
+    },
+
+    /**
+     * Perform a DELETE request on the annotation model and reset the id
+     * attribute, but don't remove event listeners.
+     */
+    delete(options) {
+        this.trigger('g:delete', this, this.collection, options);
+        let xhr = false;
+        if (!this.isNew()) {
+            xhr = restRequest({
+                url: `annotation/${this.id}`,
+                method: 'DELETE'
+            });
+        }
+        this.unset('_id');
+        return xhr;
     },
 
     /**
