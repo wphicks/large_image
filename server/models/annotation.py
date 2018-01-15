@@ -17,6 +17,7 @@
 #  limitations under the License.
 ##############################################################################
 
+from bson import ObjectId
 import datetime
 import enum
 import jsonschema
@@ -28,7 +29,10 @@ from six.moves import range
 from girder import events
 from girder import logger
 from girder.constants import AccessType
-from girder.models.model_base import Model, ValidationException
+from girder.exceptions import ValidationException
+from girder.models.model_base import Model
+
+from .annotationelement import Annotationelement
 
 
 class AnnotationSchema:
@@ -410,11 +414,9 @@ class Annotation(Model):
         :param event: the event with the item information.
         """
         item = event.info
-        annotations = self.model('annotation', 'large_image').find({
-            'itemId': item['_id']
-        })
+        annotations = Annotationelement().find({'itemId': item['_id']})
         for annotation in annotations:
-            self.model('annotation', 'large_image').remove(annotation)
+            Annotation().remove(annotation)
 
     def createAnnotation(self, item, creator, annotation):
         now = datetime.datetime.utcnow()
@@ -450,7 +452,7 @@ class Annotation(Model):
             # an arbitrary retry limit on this to prevent an infinite loop.
             maxRetries = 3
             for retry in range(maxRetries):
-                self.model('annotationelement', 'large_image').getElements(
+                Annotationelement().getElements(
                     annotation, region)
                 if (len(annotation.get('annotation', {}).get('elements')) or
                         retry + 1 == maxRetries):
@@ -476,8 +478,7 @@ class Annotation(Model):
 
         def deleteElements(query, *args, **kwargs):
             ret = delete_one(query, *args, **kwargs)
-            self.model('annotationelement', 'large_image').removeElements(
-                annotation)
+            Annotationelement().removeElements(annotation)
             return ret
 
         self.collection.delete_one = deleteElements
@@ -506,8 +507,7 @@ class Annotation(Model):
         starttime = time.time()
         replace_one = self.collection.replace_one
         insert_one = self.collection.insert_one
-        version = self.model(
-            'annotationelement', 'large_image').getNextVersionValue()
+        version = Annotationelement().getNextVersionValue()
         if '_id' not in annotation:
             oldversion = None
         else:
@@ -520,14 +520,12 @@ class Annotation(Model):
         _elementQuery = annotation.pop('_elementQuery', None)
 
         def replaceElements(query, doc, *args, **kwargs):
-            self.model('annotationelement', 'large_image').updateElements(
-                doc)
+            Annotationelement().updateElements(doc)
             elements = doc['annotation'].pop('elements', None)
             ret = replace_one(query, doc, *args, **kwargs)
             if elements:
                 doc['annotation']['elements'] = elements
-            self.model('annotationelement', 'large_image').removeOldElements(
-                doc, oldversion)
+            Annotationelement().removeOldElements(doc, oldversion)
             return ret
 
         def insertElements(doc, *args, **kwargs):
@@ -539,8 +537,7 @@ class Annotation(Model):
             ret = insert_one(doc, *args, **kwargs)
             if elements is not None:
                 doc['annotation']['elements'] = elements
-                self.model('annotationelement', 'large_image').updateElements(
-                    doc)
+                Annotationelement().updateElements(doc)
             # If we are inserting, we shouldn't have any old elements, so don't
             # bother removing them.
             return ret
@@ -635,6 +632,8 @@ class Annotation(Model):
             self.validatorAnnotation.validate(annot)
             lastValidatedElement = None
             for element in elements:
+                if isinstance(element.get('id'), ObjectId):
+                    element['id'] = str(element['id'])
                 if not self._similarElementStructure(element, lastValidatedElement):
                     self.validatorAnnotationElement.validate(element)
                     lastValidatedElement = element

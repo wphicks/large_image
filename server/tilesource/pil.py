@@ -17,7 +17,6 @@
 #  limitations under the License.
 #############################################################################
 
-import cherrypy
 import json
 import math
 import six
@@ -41,9 +40,10 @@ from ..cache_util import LruCacheMetaclass, strhash, methodcache
 
 try:
     import girder
+    from girder.models.setting import Setting
     from .base import GirderTileSource
-    from girder.utility.model_importer import ModelImporter
     from .. import constants
+    import cherrypy
 except ImportError:
     girder = None
 
@@ -62,7 +62,7 @@ def getMaxSize(size=None):
     # default value from girder settings or config.
     maxWidth = maxHeight = 4096
     if girder:
-        maxWidth = maxHeight = int(ModelImporter.model('setting').get(
+        maxWidth = maxHeight = int(Setting().get(
             constants.PluginSettings.LARGE_IMAGE_MAX_SMALL_IMAGE_SIZE))
     if size is not None:
         if isinstance(size, dict):

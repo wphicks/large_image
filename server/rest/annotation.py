@@ -22,12 +22,13 @@ import cherrypy
 from girder import logger
 from girder.api import access
 from girder.api.describe import describeRoute, Description
-from girder.api.rest import Resource, loadmodel, filtermodel, RestException
+from girder.api.rest import Resource, loadmodel, filtermodel
 from girder.constants import AccessType, SortDir
-from girder.models.model_base import AccessException, ValidationException
+from girder.exceptions import AccessException, ValidationException, RestException
 from girder.models.item import Item
 from girder.models.user import User
 from ..models.annotation import AnnotationSchema, Annotation
+from ..models.image_item import ImageItem
 
 
 class AnnotationResource(Resource):
@@ -189,7 +190,9 @@ class AnnotationResource(Resource):
         .param('id', 'The ID of the annotation.', paramType='path')
         .param('itemId', 'Pass this to move the annotation to a new item.',
                required=False)
-        .param('body', 'A JSON object containing the annotation.',
+        .param('body', 'A JSON object containing the annotation.  If the '
+               '"annotation":"elements" property is not set, the elements '
+               'will not be modified.',
                paramType='body', required=False)
         .errorResponse('Write access was denied for the item.', 403)
         .errorResponse('Invalid JSON passed in request body.')
@@ -204,9 +207,15 @@ class AnnotationResource(Resource):
         if item is not None:
             Item().requireAccess(
                 item, user=user, level=AccessType.WRITE)
-        # If we have a content length, then we have replacement JSON.
+        # If we have a content length, then we have replacement JSON.  If
+        # elements are not included, don't replace them
+        returnElements = True
         if cherrypy.request.body.length:
+            oldElements = annotation.get('annotation', {}).get('elements')
             annotation['annotation'] = self.getBodyJson()
+            if 'elements' not in annotation['annotation'] and oldElements:
+                annotation['annotation']['elements'] = oldElements
+                returnElements = False
         if params.get('itemId'):
             newitem = Item().load(params['itemId'], force=True)
             Item().requireAccess(
@@ -220,6 +229,8 @@ class AnnotationResource(Resource):
             raise RestException(
                 'Validation Error: JSON doesn\'t follow schema (%r).' % (
                     exc.args, ))
+        if not returnElements:
+            del annotation['annotation']['elements']
         return annotation
 
     @describeRoute(
@@ -268,10 +279,7 @@ class AnnotationResource(Resource):
                 continue
 
             try:
-                item = self.model('image_item', 'large_image').load(
-                    annotation['itemId'], level=AccessType.READ,
-                    user=user
-                )
+                item = ImageItem().load(annotation['itemId'], level=AccessType.READ, user=user)
             except AccessException:
                 item = None
 

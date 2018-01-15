@@ -16,6 +16,7 @@ var ImageViewerWidget = View.extend({
             this.sizeY = resp.sizeY;
             this.mm_x = resp.mm_x;
             this.mm_y = resp.mm_y;
+            this.metadata = resp;
         });
     },
 
