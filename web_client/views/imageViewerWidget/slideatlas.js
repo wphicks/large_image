@@ -68,7 +68,7 @@ var SlideAtlasImageViewerWidget = ImageViewerWidget.extend({
             tileSource: tileSource
         });
         this.viewer = this.el.saViewer;
-        this.girderGui = new window.SAM.GirderWidget(this.viewer.GetAnnotationLayer(), this.itemId);
+        this.girderGui = new window.SAM.GirderAnnotationPanel(this.viewer.GetAnnotationLayer(), this.itemId);
         $(this.el).css({position: 'relative'});
         window.SA.SAFullScreenButton($(this.el))
           .css({'position': 'absolute', 'left': '2px', 'top': '2px'});
