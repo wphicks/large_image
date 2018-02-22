@@ -17,7 +17,7 @@ var SlideAtlasImageViewerWidget = ImageViewerWidget.extend({
         $.when(
             ImageViewerWidget.prototype.initialize.call(this, settings),
             $.ajax({ // like $.getScript, but allow caching
-                url: staticRoot + '/built/plugins/large_image/extra/slideatlas/sa-all.min.js',
+                url: staticRoot + '/built/plugins/large_image/extra/slideatlas/sa-all.max.js',
                 dataType: 'script',
                 cache: true
             }))
@@ -68,7 +68,7 @@ var SlideAtlasImageViewerWidget = ImageViewerWidget.extend({
             tileSource: tileSource
         });
         this.viewer = this.el.saViewer;
-        this.girderGui = new window.SAM.GirderAnnotationPanel(this.viewer.GetAnnotationLayer(), this.itemId);
+        this.girderGui = new window.SAM.GirderAnnotationPanel(this.viewer, this.itemId);
         $(this.el).css({position: 'relative'});
         window.SA.SAFullScreenButton($(this.el))
           .css({'position': 'absolute', 'left': '2px', 'top': '2px'});
