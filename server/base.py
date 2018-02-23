@@ -145,12 +145,44 @@ def removeThumbnails(event):
     ImageItem().removeThumbnailFiles(event.info)
 
 
+def prepareCopyItem(event):
+    """
+    When copying an item, adjust the largeImage fileId reference so it can be
+    matched to the to-be-copied file.
+    """
+    srcItem, newItem = event.info
+    if 'largeImage' in newItem:
+        li = newItem['largeImage']
+        for pos, file in enumerate(Item().childFiles(item=srcItem)):
+            for key in ('fileId', 'originalId'):
+                if li.get(key) == file['_id']:
+                    li['_index_' + key] = pos
+        Item().save(newItem, triggerEvents=False)
+
+
+def handleCopyItem(event):
+    """
+    When copying an item, finish adjusting the largeImage fileId reference to
+    the copied file.
+    """
+    newItem = event.info
+    if 'largeImage' in newItem:
+        li = newItem['largeImage']
+        files = list(Item().childFiles(item=newItem))
+        for key in ('fileId', 'originalId'):
+            pos = li.pop('_index_' + key, None)
+            if pos is not None and 0 <= pos < len(files):
+                li[key] = files[pos]['_id']
+        Item().save(newItem, triggerEvents=False)
+
+
 # Validators
 
 @setting_utilities.validator({
     constants.PluginSettings.LARGE_IMAGE_SHOW_THUMBNAILS,
     constants.PluginSettings.LARGE_IMAGE_SHOW_VIEWER,
     constants.PluginSettings.LARGE_IMAGE_AUTO_SET,
+    constants.PluginSettings.LARGE_IMAGE_ANNOTATION_HISTORY,
 })
 def validateBoolean(doc):
     val = doc['value']
@@ -212,6 +244,7 @@ SettingDefault.defaults.update({
     constants.PluginSettings.LARGE_IMAGE_AUTO_SET: True,
     constants.PluginSettings.LARGE_IMAGE_MAX_THUMBNAIL_FILES: 10,
     constants.PluginSettings.LARGE_IMAGE_MAX_SMALL_IMAGE_SIZE: 4096,
+    constants.PluginSettings.LARGE_IMAGE_ANNOTATION_HISTORY: True,
 })
 
 
@@ -231,7 +264,7 @@ def load(info):
     info['apiRoot'].annotation = AnnotationResource()
 
     Item().exposeFields(level=AccessType.READ, fields='largeImage')
-    # Ask for the annotation model to make sure it is initialized.
+    # Ask for some models to make sure their singletons are initialized.
     Annotation()
 
     events.bind('data.process', 'large_image', _postUpload)
@@ -243,6 +276,8 @@ def load(info):
     events.bind('model.group.save.after', 'large_image',
                 invalidateLoadModelCache)
     events.bind('model.item.remove', 'large_image', invalidateLoadModelCache)
+    events.bind('model.item.copy.prepare', 'large_image', prepareCopyItem)
+    events.bind('model.item.copy.after', 'large_image', handleCopyItem)
     events.bind('model.item.save.after', 'large_image',
                 invalidateLoadModelCache)
     events.bind('model.file.save.after', 'large_image',

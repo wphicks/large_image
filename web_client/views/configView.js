@@ -39,6 +39,9 @@ var ConfigView = View.extend({
             }, {
                 key: 'large_image.show_extra_admin',
                 value: this.$('.g-large-image-show-extra-admin').val()
+            }, {
+                key: 'large_image.annotation_history',
+                value: this.$('.g-large-image-annotation-history-show').prop('checked')
             }]);
         }
     },

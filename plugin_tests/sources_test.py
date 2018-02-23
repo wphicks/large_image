@@ -521,9 +521,15 @@ class LargeImageSourcesTest(common.LargeImageCommonTest):
         self.assertAlmostEqual(targetRegion['width'], 4.6411, places=3)
         self.assertAlmostEqual(targetRegion['height'], 4.0857, places=3)
         self.assertEqual(targetRegion['units'], 'mm')
-        with six.assertRaisesRegex(self, ValueError, 'No mm_x'):
-            source.convertRegionScale(
-                sourceRegion, sourceScale, None, targetUnits='mm')
+
+        targetRegion = source.convertRegionScale(
+            sourceRegion, sourceScale, None, targetUnits='mm')
+        self.assertAlmostEqual(targetRegion['width'], 4.6411, places=3)
+        self.assertAlmostEqual(targetRegion['height'], 4.0857, places=3)
+        self.assertEqual(targetRegion['units'], 'mm')
+        # with six.assertRaisesRegex(self, ValueError, 'No mm_x'):
+        #     source.convertRegionScale(
+        #         sourceRegion, sourceScale, None, targetUnits='mm')
 
         targetRegion = source.convertRegionScale(
             sourceRegion, sourceScale, targetScale, targetUnits='pixels')
@@ -558,6 +564,23 @@ class LargeImageSourcesTest(common.LargeImageCommonTest):
                     sourceRegion, sourceScale, region=sourceRegion,
                     format=tilesource.TILE_FORMAT_NUMPY):
                 tileCount += 1
+
+    def testConvertPointScale(self):
+        file = self._uploadFile(os.path.join(
+            os.environ['LARGE_IMAGE_DATA'], 'sample_jp2k_33003_TCGA-CV-7242-'
+            '11A-01-TS1.1838afb1-9eee-4a70-9ae3-50e3ab45e242.svs'))
+        itemId = str(file['itemId'])
+        item = self.model('item').load(itemId, user=self.admin)
+        source = self.model('image_item', 'large_image').tileSource(item)
+        point = source.getPointAtAnotherScale((500, 800), {'magnification': 5}, 'mag_pixels')
+        self.assertEqual(point, (4000.0, 6400.0))
+        point = source.getPointAtAnotherScale(
+            (500, 800), targetScale={'magnification': 5}, targetUnits='mag_pixels')
+        self.assertEqual(point, (62.5, 100.0))
+        point = source.getPointAtAnotherScale(
+            (500000, 800), {'magnification': 5}, 'mag_pixels',
+            {'magnification': 20}, 'mag_pixels')
+        self.assertEqual(point, (2000000.0, 3200.0))
 
     def testGetSingleTile(self):
         from girder.plugins.large_image.models.image_item import ImageItem
@@ -603,3 +626,28 @@ class LargeImageSourcesTest(common.LargeImageCommonTest):
         self.assertEqual(tile['iterator_range']['region_x_max'], 11)
         self.assertEqual(tile['iterator_range']['region_y_max'], 3)
         self.assertEqual(tile['iterator_range']['position'], 33)
+
+    def testGetPixel(self):
+        from girder.plugins.large_image.models.image_item import ImageItem
+
+        file = self._uploadFile(os.path.join(
+            os.environ['LARGE_IMAGE_DATA'], 'sample_jp2k_33003_TCGA-CV-7242-'
+            '11A-01-TS1.1838afb1-9eee-4a70-9ae3-50e3ab45e242.svs'))
+        itemId = str(file['itemId'])
+        item = Item().load(itemId, user=self.admin)
+        source = ImageItem().tileSource(item)
+
+        pixel = source.getPixel(region={'left': 12125, 'top': 10640})
+        self.assertEqual(pixel, {'r': 156, 'g': 98, 'b': 138, 'a': 255})
+
+        pixel = source.getPixel(region={'left': 3.0555, 'top': 2.68128, 'units': 'mm'})
+        self.assertEqual(pixel, {'r': 156, 'g': 98, 'b': 138, 'a': 255})
+
+        pixel = source.getPixel(region={'top': 10640, 'right': 12126, 'bottom': 12000})
+        self.assertEqual(pixel, {'r': 156, 'g': 98, 'b': 138, 'a': 255})
+
+        pixel = source.getPixel(region={'left': 12125, 'top': 10640, 'right': 13000})
+        self.assertEqual(pixel, {'r': 156, 'g': 98, 'b': 138, 'a': 255})
+
+        pixel = source.getPixel(region={'left': 12125, 'top': 10640}, includeTileRecord=True)
+        self.assertIn('tile', pixel)

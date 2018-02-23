@@ -113,7 +113,8 @@ class PILFileTileSource(FileTileSource):
         # to an 8-bit integer.  This expects the source value to either have a
         # maximum of 1, 2^8-1, 2^16-1, 2^24-1, or 2^32-1, and scales it to
         # [0, 255]
-        if self._pilImage.mode in ('I', 'F') and numpy:
+        pilImageMode = self._pilImage.mode.split(';')[0]
+        if pilImageMode in ('I', 'F') and numpy:
             imgdata = numpy.asarray(self._pilImage)
             maxval = 256 ** math.ceil(math.log(numpy.max(imgdata) + 1, 256)) - 1
             self._pilImage = PIL.Image.fromarray(numpy.uint8(numpy.multiply(
@@ -169,7 +170,7 @@ if girder:
             return strhash(
                 super(PILGirderTileSource, PILGirderTileSource).getLRUHash(
                     *args, **kwargs),
-                kwargs.get('maxSize'))
+                kwargs.get('maxSize', args[1] if len(args) >= 2 else None))
 
         def getState(self):
             return super(PILGirderTileSource, self).getState() + ',' + str(
