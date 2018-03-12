@@ -114,6 +114,8 @@ add_python_test(girderless PLUGIN large_image
 set_property(TEST server_large_image.girderless APPEND PROPERTY ENVIRONMENT
   "LARGE_IMAGE_DATA=${PROJECT_BINARY_DIR}/data/plugins/large_image")
 
+add_python_test(util PLUGIN large_image)
+
 add_python_test(examples PLUGIN large_image
   # There is a bug in cmake that fails when external data files are added to
   # multiple tests, so comment out the external data directive.

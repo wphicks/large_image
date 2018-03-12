@@ -21,11 +21,13 @@ try:
     from . import server   # Works in non-editable install
     from .server import tilesource
     from .server import cache_util
+    from .server import util
 except ImportError:
     import server          # Works in editable install
     from server import tilesource
     from server import cache_util
+    from server import util
 
 getTileSource = tilesource.getTileSource  # noqa
 
-__all__ = ['server', 'tilesource', 'getTileSource', 'cache_util']
+__all__ = ['server', 'tilesource', 'getTileSource', 'cache_util', 'util']

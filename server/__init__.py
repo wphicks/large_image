@@ -34,3 +34,4 @@ else:
     # if girder is available, and we fail to import anything else, girder will
     # show the failure
     from .base import load  # noqa
+from . import util  # noqa
