@@ -53,8 +53,8 @@ def _nearPowerOfTwo(val1, val2, tolerance=0.02):
     if val1 * val2 <= 0:
         return False
     log2ratio = math.log(float(val1) / float(val2)) / math.log(2)
-    # Use modf()[0] to get the mantissa of the ratio's log2 value.
-    return abs(math.modf(log2ratio)[0]) < tolerance
+    # Compare the mantissa of the ratio's log2 value.
+    return abs(log2ratio - round(log2ratio)) < tolerance
 
 
 @six.add_metaclass(LruCacheMetaclass)
@@ -154,12 +154,12 @@ class SVSFileTileSource(FileTileSource):
         try:
             width = int(self._openslide.properties[
                 'openslide.level[0].tile-width'])
-        except ValueError:
+        except (ValueError, KeyError):
             pass
         try:
             height = int(self._openslide.properties[
                 'openslide.level[0].tile-height'])
-        except ValueError:
+        except (ValueError, KeyError):
             pass
         # If the tile size is too small (<4) or wrong (<=0), use a default value
         if width < 4:

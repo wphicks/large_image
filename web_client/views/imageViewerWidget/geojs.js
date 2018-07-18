@@ -2,6 +2,7 @@ import _ from 'underscore';
 import Backbone from 'backbone';
 // Import hammerjs for geojs touch events
 import Hammer from 'hammerjs';
+import d3 from 'd3';
 
 import { staticRoot, restRequest } from 'girder/rest';
 import events from 'girder/events';
@@ -10,6 +11,7 @@ import ImageViewerWidget from './base';
 import convertAnnotation from '../../annotations/geojs/convert';
 
 window.hammerjs = Hammer;
+window.d3 = d3;
 
 /**
  * Generate a new "random" element id (24 random 16 digits).
@@ -27,10 +29,12 @@ var GeojsImageViewerWidget = ImageViewerWidget.extend({
     initialize: function (settings) {
         this._annotations = {};
         this._featureOpacity = {};
+        this._globalAnnotationOpacity = settings.globalAnnotationOpacity || 1.0;
         this._highlightFeatureSizeLimit = settings.highlightFeatureSizeLimit || 10000;
         this.listenTo(events, 's:widgetDrawRegion', this.drawRegion);
         this.listenTo(events, 'g:startDrawMode', this.startDrawMode);
         this._hoverEvents = settings.hoverEvents;
+        this._scale = settings.scale;
 
         $.when(
             ImageViewerWidget.prototype.initialize.call(this, settings).then(() => {
@@ -89,7 +93,8 @@ var GeojsImageViewerWidget = ImageViewerWidget.extend({
                 keepLower: false,
                 attribution: null,
                 url: this._getTileUrl('{z}', '{x}', '{y}', {'encoding': 'PNG', 'projection': 'EPSG:3857'}),
-                useCredentials: true
+                useCredentials: true,
+                maxLevel: this.levels - 1
             };
             // the metadata levels is the count including level 0, so use one
             // less than the value specified
@@ -103,10 +108,18 @@ var GeojsImageViewerWidget = ImageViewerWidget.extend({
             this.viewer.createLayer('osm');
             this.viewer.createLayer('osm', params);
         }
+        if (this._scale && (this.metadata.mm_x || this.metadata.geospatial || this._scale.scale)) {
+            if (!this._scale.scale && !this.metadata.geospatial) {
+                this._scale.scale = this.metadata.mm_x / 100;
+            }
+            this.uiLayer = this.viewer.createLayer('ui');
+            this.scaleWidget = this.uiLayer.createWidget('scale', this._scale);
+        }
         // the feature layer is for annotations that are loaded
         this.featureLayer = this.viewer.createLayer('feature', {
             features: ['point', 'line', 'polygon']
         });
+        this.setGlobalAnnotationOpacity(this._globalAnnotationOpacity);
         this.featureLayer.geoOn(window.geo.event.pan, () => { this.setBounds(); });
         // the annotation layer is for annotations that are actively drawn
         this.annotationLayer = this.viewer.createLayer('annotation', {
@@ -120,12 +133,18 @@ var GeojsImageViewerWidget = ImageViewerWidget.extend({
 
     destroy: function () {
         if (this.viewer) {
+            // make sure there is nothing left in the animation queue
+            var queue = [];
+            this.viewer.animationQueue(queue);
+            queue.splice(0, queue.length);
             this.viewer.exit();
             this.viewer = null;
         }
         this.deleted = true;
         ImageViewerWidget.prototype.destroy.call(this);
     },
+
+    annotationAPI: _.constant(true),
 
     /**
      * Render an annotation model on the image.  Currently,
@@ -232,7 +251,7 @@ var GeojsImageViewerWidget = ImageViewerWidget.extend({
             const features = layer.features;
             this._mutateFeaturePropertiesForHighlight(annotationId, features);
         });
-        this.viewer.draw();
+        this.viewer.scheduleAnimationFrame(this.viewer.draw);
         return this;
     },
 
@@ -249,12 +268,10 @@ var GeojsImageViewerWidget = ImageViewerWidget.extend({
                 // this slows down interactivity considerably.
                 return;
             }
-            const fillOpacityArray = [];
-            const strokeOpacityArray = [];
-
             // pre-allocate arrays for performance
-            fillOpacityArray.length = data.length;
-            strokeOpacityArray.length = data.length;
+            const fillOpacityArray = new Array(data.length);
+            const strokeOpacityArray = new Array(data.length);
+
             for (let i = 0; i < data.length; i += 1) {
                 const id = data[i].id;
                 const fillOpacity = data[i].fillOpacity;
@@ -403,6 +420,14 @@ var GeojsImageViewerWidget = ImageViewerWidget.extend({
         );
         layer.mode(type);
         return defer.promise();
+    },
+
+    setGlobalAnnotationOpacity: function (opacity) {
+        this._globalAnnotationOpacity = opacity;
+        if (this.featureLayer) {
+            this.featureLayer.opacity(opacity);
+        }
+        return this;
     },
 
     _setEventTypes: function () {

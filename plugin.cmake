@@ -85,6 +85,13 @@ add_python_test(sources PLUGIN large_image BIND_SERVER
 set_property(TEST server_large_image.sources APPEND PROPERTY ENVIRONMENT
   "LARGE_IMAGE_DATA=${PROJECT_BINARY_DIR}/data/plugins/large_image")
 
+add_python_test(fuse_off PLUGIN large_image BIND_SERVER)
+set_property(TEST server_large_image.fuse_off APPEND PROPERTY ENVIRONMENT
+  "LARGE_IMAGE_DATA=${PROJECT_BINARY_DIR}/data/plugins/large_image")
+
+add_python_test(fuse_on PLUGIN large_image BIND_SERVER)
+set_property(TEST server_large_image.fuse_on APPEND PROPERTY ENVIRONMENT
+  "LARGE_IMAGE_DATA=${PROJECT_BINARY_DIR}/data/plugins/large_image")
 
 add_python_test(import PLUGIN large_image BIND_SERVER)
 
@@ -148,6 +155,11 @@ add_web_client_test(
 add_web_client_test(
   geojs_annotations
   "${CMAKE_CURRENT_LIST_DIR}/plugin_tests/client/geojsAnnotationSpec.js"
+  PLUGIN large_image)
+
+add_web_client_test(
+  annotation_list
+  "${CMAKE_CURRENT_LIST_DIR}/plugin_tests/client/annotationListSpec.js"
   PLUGIN large_image)
 
 #add_puglint_test(

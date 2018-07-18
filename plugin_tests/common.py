@@ -38,8 +38,8 @@ TIFFHeader = b'II\x2a\x00'
 
 
 class LargeImageCommonTest(base.TestCase):
-    def setUp(self):
-        base.TestCase.setUp(self)
+    def setUp(self, *args, **kwargs):
+        base.TestCase.setUp(self, *args, **kwargs)
         admin = {
             'email': 'admin@email.com',
             'login': 'adminlogin',
@@ -63,6 +63,12 @@ class LargeImageCommonTest(base.TestCase):
                 self.publicFolder = folder
             if folder['name'] == 'Private':
                 self.privateFolder = folder
+        folders = Folder().childFolders(self.user, 'user', user=self.admin)
+        for folder in folders:
+            if folder['name'] == 'Public':
+                self.userPublicFolder = folder
+            if folder['name'] == 'Private':
+                self.userPrivateFolder = folder
         # Authorize our user for Girder Worker
         resp = self.request(
             '/system/setting', method='PUT', user=self.admin, params={
@@ -75,6 +81,13 @@ class LargeImageCommonTest(base.TestCase):
                     }])})
         self.assertStatusOk(resp)
 
+    def tearDown(self):
+        from girder.plugins.large_image import cache_util
+
+        # Clear the cache so tests can't affect each other.
+        cache_util.cachesClear()
+        base.TestCase.tearDown(self)
+
     def _uploadFile(self, path, name=None, private=False):
         """
         Upload the specified path to the admin user's public or private folder
@@ -83,16 +96,23 @@ class LargeImageCommonTest(base.TestCase):
         :param path: path to upload.
         :param name: optional name for the file.
         :param private: True to upload to the private folder, False for public.
+            'user' for the user's private folder.
         :returns: file: the created file.
         """
         if not name:
             name = os.path.basename(path)
         with open(path, 'rb') as file:
             data = file.read()
+        if private == 'user':
+            folderId = self.userPrivateFolder['_id']
+        elif private:
+            folderId = self.privateFolder['_id']
+        else:
+            folderId = self.publicFolder['_id']
         resp = self.request(
             path='/file', method='POST', user=self.admin, params={
                 'parentType': 'folder',
-                'parentId': self.privateFolder['_id'] if private else self.publicFolder['_id'],
+                'parentId': folderId,
                 'name': name,
                 'size': len(data)
             })

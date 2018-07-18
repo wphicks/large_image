@@ -85,12 +85,17 @@ class AnnotationResource(Resource):
             query['$text'] = {'$search': params['text']}
         if params.get('name'):
             query['annotation.name'] = params['name']
-        fields = list(('annotation.name', 'annotation.description', 'access') +
-                      Annotation().baseFields)
-        return list(Annotation().filterResultsByPermission(
+        fields = list(
+            (
+                'annotation.name', 'annotation.description', 'access', 'groups', '_version'
+            ) + Annotation().baseFields)
+        annotations = list(Annotation().filterResultsByPermission(
             cursor=Annotation().find(query, sort=sort, fields=fields),
             user=self.getCurrentUser(), level=AccessType.READ, limit=limit, offset=offset
         ))
+        for annotation in annotations:
+            Annotation().injectAnnotationGroupSet(annotation)
+        return annotations
 
     @describeRoute(
         Description('Get the official Annotation schema')
@@ -292,22 +297,26 @@ class AnnotationResource(Resource):
         .errorResponse('Admin access was denied for the annotation.', 403)
     )
     @access.user
-    @loadmodel(model='annotation', plugin='large_image', level=AccessType.ADMIN)
+    @loadmodel(model='annotation', plugin='large_image', getElements=False, level=AccessType.ADMIN)
     def getAnnotationAccess(self, annotation, params):
         return Annotation().getFullAccessList(annotation)
 
     @describeRoute(
         Description('Update the access control list for an annotation.')
         .param('id', 'The ID of the annotation.', paramType='path')
-        .param('access', 'THe JSON-encoded access control list.')
+        .param('access', 'The JSON-encoded access control list.')
+        .param('public', 'Whether the annotation should be publicly visible.',
+               dataType='boolean', required=False)
         .errorResponse('ID was invalid.')
         .errorResponse('Admin access was denied for the annotation.', 403)
     )
     @access.user
-    @loadmodel(model='annotation', plugin='large_image', level=AccessType.ADMIN)
+    @loadmodel(model='annotation', plugin='large_image', getElements=False, level=AccessType.ADMIN)
     @filtermodel(model=Annotation, addFields={'access'})
     def updateAnnotationAccess(self, annotation, params):
         access = json.loads(params['access'])
+        public = self.boolParam('public', params, False)
+        annotation = Annotation().setPublic(annotation, public)
         return Annotation().setAccessList(
             annotation, access, save=True, user=self.getCurrentUser())
 

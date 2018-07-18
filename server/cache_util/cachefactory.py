@@ -97,18 +97,19 @@ def pickAvailableCache(sizeEach, portion=8, maxItems=None):
     return numItems
 
 
-class CacheFactory():
+class CacheFactory(object):
     logged = False
 
     def getCacheSize(self, numItems):
         if numItems is None:
+            defaultPortion = 8 if config else 32
             try:
-                portion = int(getConfig('cache_python_memory_portion', 8))
+                portion = int(getConfig('cache_python_memory_portion', defaultPortion))
                 if portion < 3:
                     portion = 3
             except ValueError:
-                portion = 16
-            numItems = pickAvailableCache(256**2 * 4, portion)
+                portion = defaultPortion
+            numItems = pickAvailableCache(256**2 * 4 * 2, portion)
         return numItems
 
     def getCache(self, numItems=None):

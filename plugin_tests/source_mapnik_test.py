@@ -146,6 +146,38 @@ class LargeImageSourceMapnikTest(common.LargeImageCommonTest):
 
         self.assertIn(None, diffs)
 
+    def testTileLinearStyleFromGeotiffs(self):
+        file = self._uploadFile(os.path.join(
+            os.path.dirname(__file__), 'test_files', 'rgb_geotiff.tiff'))
+
+        style = json.dumps({'band': 1, 'min': 0, 'max': 100,
+                            'palette': 'matplotlib.Plasma_6',
+                            'scheme': 'linear'})
+
+        itemId = str(file['itemId'])
+        resp = self.request(
+            path='/item/%s/tiles/zxy/7/22/51' % itemId, user=self.admin,
+            isJson=False, params={'encoding': 'PNG', 'projection': 'EPSG:3857',
+                                  'style': style})
+
+        self.assertStatusOk(resp)
+        image = PIL.Image.open(six.BytesIO(self.getBody(resp, text=False)))
+        testImage = os.path.join(
+            os.path.dirname(__file__), 'test_files', 'geotiff_style_linear_7_22_51.png')
+
+        testImagePy3 = os.path.join(
+            os.path.dirname(__file__), 'test_files', 'geotiff_style_linear_7_22_51_py3.png')
+
+        testImage = PIL.Image.open(testImage)
+        testImagePy3 = PIL.Image.open(testImagePy3)
+
+        diffs = [
+            PIL.ImageChops.difference(image, testImage).getbbox(),
+            PIL.ImageChops.difference(image, testImagePy3).getbbox()
+        ]
+
+        self.assertIn(None, diffs)
+
     def _assertStyleResponse(self, itemId, style, message):
         style = json.dumps(style)
         resp = self.request(
@@ -191,6 +223,14 @@ class LargeImageSourceMapnikTest(common.LargeImageCommonTest):
             'max': 100,
             'palette': 'nonexistent.palette'
         }, 'Palette is not a valid palettable path.')
+
+        self._assertStyleResponse(itemId, {
+            'band': 1,
+            'min': 0,
+            'max': 100,
+            'palette': 'matplotlib.Plasma_6',
+            'scheme': 'some_invalid_scheme'
+        }, 'Scheme has to be either "discrete" or "linear".')
 
         self._assertStyleResponse(itemId, ['style'],
                                   'Style is not a valid json object.')
@@ -338,6 +378,26 @@ class LargeImageSourceMapnikTest(common.LargeImageCommonTest):
         with six.assertRaisesRegex(self, TileSourceException, 'does not have a projected scale'):
             MapnikTileSource(filepath)
 
+    def testStereographicProjection(self):
+        from girder.plugins.large_image.tilesource import TileSourceException
+        from girder.plugins.large_image.tilesource.mapniksource import MapnikTileSource
+
+        filepath = os.path.join(os.path.dirname(__file__), 'test_files', 'rgb_geotiff.tiff')
+        # We will fail if we ask for a stereographic projection and don't
+        # specify unitsPerPixel
+        with six.assertRaisesRegex(self, TileSourceException, 'unitsPerPixel must be specified'):
+            MapnikTileSource(filepath, projection='EPSG:3411')
+        # But will pass if unitsPerPixel is specified
+        MapnikTileSource(filepath, projection='EPSG:3411', unitsPerPixel=150000)
+
+        # We can also upload and access this via a rest call
+        file = self._uploadFile(filepath)
+        itemId = str(file['itemId'])
+        resp = self.request(
+            path='/item/%s/tiles' % itemId, user=self.admin,
+            params={'projection': 'EPSG:3411', 'unitsPerPixel': 150000})
+        self.assertStatusOk(resp)
+
     def testProj4Proj(self):
         # Test obtaining pyproj.Proj projection values
         from girder.plugins.large_image.tilesource.mapniksource import MapnikTileSource
@@ -393,3 +453,15 @@ class LargeImageSourceMapnikTest(common.LargeImageCommonTest):
         self.assertAlmostEqual(result[0], -13024380, 0)
         self.assertAlmostEqual(result[1], 3895303, 0)
         self.assertEqual(result[2:], (None, None, 'projection'))
+
+    def testGuardAgainstBadLatLong(self):
+        from girder.plugins.large_image.tilesource.mapniksource import MapnikTileSource
+        filepath = os.path.join(
+            os.path.dirname(__file__), 'test_files', 'global_dem.tif')
+        source = MapnikTileSource(filepath)
+        bounds = source.getBounds(srs='EPSG:4326')
+
+        self.assertEqual(bounds['xmin'], -180.00416667)
+        self.assertEqual(bounds['xmax'], 179.99583333)
+        self.assertEqual(bounds['ymin'], -89.99583333)
+        self.assertEqual(bounds['ymax'], 89.999999)
