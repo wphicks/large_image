@@ -1,3 +1,4 @@
+import { restRequest } from 'girder/rest';
 import { staticRoot } from 'girder/rest';
 
 import ImageViewerWidget from './base';
@@ -24,6 +25,37 @@ var SlideAtlasImageViewerWidget = ImageViewerWidget.extend({
             .done(() => this.render());
     },
 
+    uploadImage: function (dataUrl, girderFileId) {
+      // We might try to get binary from the canvas.
+      //canvas.toBlob(onsuccess);
+
+      var BASE64_MARKER = ';base64,';
+      var base64Index = dataUrl.indexOf(BASE64_MARKER) + BASE64_MARKER.length;
+      var base64 = dataUrl.substring(base64Index);
+      var raw = window.atob(base64);
+      var rawLength = raw.length;
+      var array = new Uint8Array(new ArrayBuffer(rawLength));
+      for(var i = 0; i < rawLength; i++) {
+        array[i] = raw.charCodeAt(i);
+      }
+
+      //var size = dataUrl.length;
+      var size = rawLength;
+      var url = 'file?parentType=item&parentId=5990fc973f24e54cbd1469b9&name=junk.png&size='+size.toString();
+      // size=,linkUrl=      
+      // Content-Transfer-Encoding: "BASE64",
+      //contentTransferEncoding: "base64",
+      restRequest({url: url,
+                   contentType: 'image/png',
+                   processData: false,
+                   data: array,
+                   type: 'POST',
+                  })
+        .done(function (d) {
+          var uploadId = d._id;
+        });
+    },
+  
     render: function () {
         // render can get clled multiple times
         if (this.viewer) {
@@ -72,7 +104,8 @@ var SlideAtlasImageViewerWidget = ImageViewerWidget.extend({
         $(this.el).css({position: 'relative'});
         window.SA.SAFullScreenButton($(this.el))
           .css({'position': 'absolute', 'left': '2px', 'top': '2px'});
-
+        SA.GirderView = this;
+      
         this.trigger('g:imageRendered', this);
 
         return this;
