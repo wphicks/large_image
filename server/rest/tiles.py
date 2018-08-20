@@ -306,7 +306,7 @@ class TilesItemResource(ItemResource):
     #   @loadmodel(model='item', map={'itemId': 'item'}, level=AccessType.READ)
     #   def getTile(self, item, z, x, y, params):
     #       return self._getTile(item, z, x, y, params, True)
-    @access.public
+    @access.public(alwaysPublic=True)
     def getTile(self, itemId, z, x, y, params):
         _adjustParams(params)
         item = loadmodelcache.loadModel(
@@ -588,7 +588,7 @@ class TilesItemResource(ItemResource):
         .errorResponse('ID was invalid.')
         .errorResponse('Read access was denied for the item.', 403)
     )
-    @access.public
+    @access.public(alwaysPublic=True)
     def getAssociatedImage(self, itemId, image, params):
         _adjustParams(params)
         # We can't use the loadmodel decorator, as we want to allow cookies
