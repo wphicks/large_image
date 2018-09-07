@@ -53,6 +53,8 @@ sourceList = [
     {'moduleName': '.svs', 'className': 'SVSGirderTileSource', 'girder': True},
     {'moduleName': '.mapniksource', 'className': 'MapnikTileSource'},
     {'moduleName': '.mapniksource', 'className': 'MapnikGirderTileSource', 'girder': True},
+    {'moduleName': '.imagej', 'className': 'ImageJFileTileSource'},
+    {'moduleName': '.imagej', 'className': 'ImageJGirderTileSource', 'girder': True},
     {'moduleName': '.pil', 'className': 'PILFileTileSource'},
     {'moduleName': '.pil', 'className': 'PILGirderTileSource', 'girder': True},
     {'moduleName': '.test', 'className': 'TestTileSource'},

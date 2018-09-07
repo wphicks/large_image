@@ -86,6 +86,9 @@ var GeojsImageViewerWidget = ImageViewerWidget.extend({
                 this.el, w, h, this.tileWidth, this.tileHeight);
             params.layer.useCredentials = true;
             params.layer.url = this._getTileUrl('{z}', '{x}', '{y}');
+            if (this.tileWidth > 8192 || this.tileHeight > 8192) {
+                params.layer.renderer = 'canvas';
+            }
             this.viewer = geo.map(params.map);
             this.viewer.createLayer('osm', params.layer);
         } else {
@@ -106,7 +109,39 @@ var GeojsImageViewerWidget = ImageViewerWidget.extend({
                 bottom: this.metadata.bounds.ymin
             }, 'EPSG:3857');
             this.viewer.createLayer('osm');
+            if (this.tileWidth > 8192 || this.tileHeight > 8192) {
+                params.layer.renderer = 'canvas';
+            }
             this.viewer.createLayer('osm', params);
+        }
+        if (this.metadata.imagej) {
+            var ctrl = $('<input type="range" id="slice-range" min="0">');
+            this.$el.before(ctrl);
+            ctrl.attr('max', +this.metadata.imagej.slices - 1).val(+this.metadata.slice);
+            var layer = this.viewer.layers()[0];
+            var layer2 = this.viewer.createLayer('osm', layer._options);
+            layer2.moveToBottom();
+            var baseurl = layer.url();
+            this._slice = this.metadata.slice;
+            var imagejUpdate = () => {
+                var slice = ctrl.val();
+                if (slice !== this._slice && !this._updating) {
+                    this._updating = true;
+                    this._slice = slice;
+                    this.viewer.onIdle(() => {
+                        layer2.url(baseurl + '?slice=' + slice);
+                        this.viewer.onIdle(() => {
+                            layer.moveToBottom();
+                            var ltemp = layer;
+                            layer = layer2;
+                            layer2 = ltemp;
+                            this._updating = false;
+                            imagejUpdate();
+                        });
+                    });
+                }
+            };
+            ctrl.on('change', imagejUpdate).on('input', imagejUpdate);
         }
         this.viewer.geoOn(geo.event.pan, () => {
             this.setBounds();
