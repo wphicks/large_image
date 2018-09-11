@@ -320,6 +320,9 @@ class TilesItemResource(ItemResource):
             redirect = False
         return self._getTile(item, z, x, y, params, mayRedirect=redirect)
 
+    # This is needed to work with the disable-public-access plugin.
+    getTile.alwaysPublic = True
+
     @describeRoute(
         Description('Get a test large image tile.')
         .param('z', 'The layer number of the tile (0 is the most zoomed-out '
