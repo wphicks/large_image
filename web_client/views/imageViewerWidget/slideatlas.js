@@ -1,7 +1,11 @@
 import { restRequest } from 'girder/rest';
 import { staticRoot } from 'girder/rest';
-
 import ImageViewerWidget from './base';
+import Backbone from 'backbone';
+import { splitRoute, parseQueryString } from 'girder/misc';
+//import router from '../../router';
+
+
 
 var SlideAtlasImageViewerWidget = ImageViewerWidget.extend({
     initialize: function (settings) {
@@ -93,6 +97,7 @@ var SlideAtlasImageViewerWidget = ImageViewerWidget.extend({
             // tileSource.units = 'pixels';
             tileSource.spacing = [1, 1];
         }
+
         window.SA.SAViewer(window.$(this.el), {
             zoomWidget: true,
             drawWidget: true,
@@ -100,11 +105,30 @@ var SlideAtlasImageViewerWidget = ImageViewerWidget.extend({
             tileSource: tileSource
         });
         this.viewer = this.el.saViewer;
+
         this.girderGui = new window.SAM.GirderAnnotationPanel(this.viewer, this.itemId);
         $(this.el).css({position: 'relative'});
         window.SA.SAFullScreenButton($(this.el))
           .css({'position': 'absolute', 'left': '2px', 'top': '2px'});
         SA.GirderView = this;
+      
+        // Set the view from the URL if bounds are specified.
+        var curRoute = Backbone.history.fragment,
+          routeParts = splitRoute(curRoute),
+          queryString = parseQueryString(routeParts.name);
+
+        if (queryString.bounds) {
+          var rot = 0
+          if (queryString.rotate) {
+            rot = parseInt(queryString.rotate);
+          }
+          var bds = queryString.bounds.split(',')
+          var x0 = parseInt(bds[0])
+          var y0 = parseInt(bds[1])
+          var x1 = parseInt(bds[2])
+          var y1 = parseInt(bds[3])
+          this.viewer.SetCamera([(x0+x1)*0.5, (y0+y1)*0.5], rot, (y1-y0));
+        }
       
         this.trigger('g:imageRendered', this);
 
