@@ -479,6 +479,8 @@ class AnnotationResource(Resource):
     @access.user
     def createItemAnnotations(self, item, annotations):
         user = self.getCurrentUser()
+        if not isinstance(annotations, list):
+            annotations = [annotations]
         for entry in annotations:
             if not isinstance(entry, dict):
                 raise RestException('Entries in the annotation list must be JSON objects.')
