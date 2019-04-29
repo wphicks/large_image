@@ -49,7 +49,7 @@ class AnnotationSchema(object):
         'items': {
             'type': 'number'
         },
-        'minItems': 3,
+        'minItems': 2,
         'maxItems': 3,
         'name': 'Coordinate',
         # TODO: define origin for 3D images
@@ -81,6 +81,11 @@ class AnnotationSchema(object):
                 'pattern': '^[0-9a-f]{24}$',
             },
             'type': {'type': 'string'},
+            # airplane feature locations
+            'nose': coordSchema,
+            'tail': coordSchema,
+            'left': coordSchema,
+            'right': coordSchema,
             'label': {
                 'type': 'object',
                 'properties': {
