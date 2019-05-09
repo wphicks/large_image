@@ -71,6 +71,11 @@ class AnnotationSchema(object):
                    'rgba\(\d+,\s*\d+,\s*\d+,\s*(\d?\.|)\d+\))$'
     }
 
+    userSchema = {
+        'type': 'object',
+        'additionalProperties': True
+    }
+
     baseShapeSchema = {
         '$schema': 'http://json-schema.org/schema#',
         'id': '/girder/plugins/large_image/models/base_shape',
@@ -82,6 +87,7 @@ class AnnotationSchema(object):
             },
             'type': {'type': 'string'},
             # airplane feature locations
+            'user': userSchema,
             'nose': coordSchema,
             'tail': coordSchema,
             'left': coordSchema,
