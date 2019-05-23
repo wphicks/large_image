@@ -18,9 +18,11 @@
 #############################################################################
 
 import math
+import os
 from six import BytesIO
 
 from ..cache_util import getTileCache, strhash, methodcache
+from ..constants import SourcePriority
 
 try:
     import girder
@@ -247,6 +249,8 @@ class LazyTileDict(dict):
             self['tile_y'] = self.get('tile_y', self['y'])
             self['tile_width'] = self.get('tile_width', self.width)
             self['tile_height'] = self.get('tile_width', self.height)
+            if self.get('magnification', None):
+                self['tile_magnification'] = self.get('tile_magnification', self['magnification'])
             self['x'] = float(self['tile_x'])
             self['y'] = float(self['tile_y'])
             # Add provisional width and height
@@ -255,6 +259,8 @@ class LazyTileDict(dict):
                     self['tile_width'] / self.requestedScale))
                 self['height'] = max(1, int(
                     self['tile_height'] / self.requestedScale))
+                if self.get('tile_magnification', None):
+                    self['magnification'] = self['tile_magnification'] / self.requestedScale
             # If we can resample the tile, many parameters may change once the
             # image is loaded.  Don't include width and height in this list;
             # the provisional values are sufficient.
@@ -359,6 +365,13 @@ class LazyTileDict(dict):
 
 class TileSource(object):
     name = None
+
+    # extensions is a dictionary of known file extensions and the
+    # SourcePriority given to each.  It must contain a None key with a priority
+    # for the tile source when the extension does not match.
+    extensions = {
+        None: SourcePriority.FALLBACK
+    }
 
     def __init__(self, jpegQuality=95, jpegSubsampling=0,
                  encoding='JPEG', edge=False, tiffCompression='raw', *args,
@@ -580,7 +593,7 @@ class TileSource(object):
         :param format: a tuple of allowed formats.  Formats are members of
             TILE_FORMAT_*.  This will avoid converting images if they are
             in the desired output encoding (regardless of subparameters).
-            Otherwise, TILE_FORMAT_PIL is returned.
+            Otherwise, TILE_FORMAT_NUMPY is returned.
         :param region: a dictionary of optional values which specify the part
                 of the image to process.
             left: the left edge (inclusive) of the region to process.
@@ -652,7 +665,7 @@ class TileSource(object):
             metadata: tile source metadata (from getMetadata)
             output: a dictionary of the output resolution information.
                 width, height: the requested output resolution in pixels.  If
-                    this is different that region width and regionH hight, then
+                    this is different that region width and region height, then
                     the original request was asking for a different scale than
                     is being delivered.
             format: a tuple of allowed output formats.
@@ -798,7 +811,7 @@ class TileSource(object):
                 'width': outWidth,
                 'height': outHeight,
             },
-            'format': kwargs.get('format', (TILE_FORMAT_PIL, )),
+            'format': kwargs.get('format', (TILE_FORMAT_NUMPY, )),
             'encoding': kwargs.get('encoding'),
             'requestedScale': requestedScale,
             'resample': resample,
@@ -813,7 +826,7 @@ class TileSource(object):
         Given tile iterator information, iterate through the tiles.
         Each tile is returned as part of a dictionary that includes
             x, y: (left, top) coordinate in current magnification pixels
-            height, width: size of current tile in pixels
+            width, height: size of current tile in current magnification pixels
             tile: cropped tile image
             format: format of the tile.  Always TILE_FORMAT_PIL or
                 TILE_FORMAT_IMAGE.  TILE_FORMAT_IMAGE is only returned if it
@@ -821,12 +834,14 @@ class TileSource(object):
                 image encoding.
             level: level of the current tile
             level_x, level_y: the tile reference number within the level.
+                Tiles are numbered (0, 0), (1, 0), (2, 0), etc.  The 0th tile
+                yielded may not be (0, 0) if a region is specified.
             tile_position: a dictionary of the tile position within the
                     iterator, containing:
                 level_x, level_y: the tile reference number within the level.
                 region_x, region_y: 0, 0 is the first tile in the full
-                    iteration (when not restrictioning the iteration to a
-                    single tile).
+                    iteration (when not restricting the iteration to a single
+                    tile).
                 position: a 0-based value for the tile within the full
                     iteration.
             iterator_range: a dictionary of the output range of the iterator:
@@ -840,8 +855,8 @@ class TileSource(object):
                     iteration.  This is region_x_max * region_y_max.
             magnification: magnification of the current tile
             mm_x, mm_y: size of the current tile pixel in millimeters.
-            gx, gy - (left, top) coordinate in maximum-resolution pixels
-            gwidth, gheight: size of of the current tile in maximum resolution
+            gx, gy: (left, top) coordinates in maximum-resolution pixels
+            gwidth, gheight: size of of the current tile in maximum-resolution
                 pixels.
             tile_overlap: the amount of overlap with neighboring tiles (left,
                 top, right, and bottom).  Overlap never extends outside of the
@@ -1454,22 +1469,44 @@ class TileSource(object):
             level = max(0, min(mag['level'], level))
         return level
 
-    def tileIterator(self, format=(TILE_FORMAT_PIL, ), resample=False,
+    def tileIterator(self, format=(TILE_FORMAT_NUMPY, ), resample=True,
                      **kwargs):
         """
         Iterate on all tiles in the specifed region at the specified scale.
         Each tile is returned as part of a dictionary that includes
             x, y: (left, top) coordinates in current magnification pixels
-            width, height: size of current tile incurrent magnification pixels
+            width, height: size of current tile in current magnification pixels
             tile: cropped tile image
             format: format of the tile
             level: level of the current tile
             level_x, level_y: the tile reference number within the level.
+                Tiles are numbered (0, 0), (1, 0), (2, 0), etc.  The 0th tile
+                yielded may not be (0, 0) if a region is specified.
+            tile_position: a dictionary of the tile position within the
+                    iterator, containing:
+                level_x, level_y: the tile reference number within the level.
+                region_x, region_y: 0, 0 is the first tile in the full
+                    iteration (when not restricting the iteration to a single
+                    tile).
+                position: a 0-based value for the tile within the full
+                    iteration.
+            iterator_range: a dictionary of the output range of the iterator:
+                level_x_min, level_y_min, level_x_max, level_y_max: the tiles
+                    that are be included during the full iteration:
+                    [layer_x_min, layer_x_max) and [layer_y_min, layer_y_max).
+                region_x_max, region_y_max: the number of tiles included during
+                    the full iteration.   This is layer_x_max - layer_x_min,
+                    layer_y_max - layer_y_min.
+                position: the total number of tiles included in the full
+                    iteration.  This is region_x_max * region_y_max.
             magnification: magnification of the current tile
             mm_x, mm_y: size of the current tile pixel in millimeters.
-            gx, gy: (left, top) coordinate in maximum-resolution pixels
-            gwidth, gheight: size of of the current tile in maximum resolution
+            gx, gy: (left, top) coordinates in maximum-resolution pixels
+            gwidth, gheight: size of of the current tile in maximum-resolution
                 pixels.
+            tile_overlap: the amount of overlap with neighboring tiles (left,
+                top, right, and bottom).  Overlap never extends outside of the
+                requested region.
         If a region that includes partial tiles is requested, those tiles are
         cropped appropriately.  Most images will have tiles that get cropped
         along the right and bottom egdes in any case.  If an exact
@@ -1481,13 +1518,14 @@ class TileSource(object):
             specified.
         :param resample: If True or one of PIL.Image.NEAREST, LANCZOS,
             BILINEAR, or BICUBIC to resample tiles that are not the target
-            output size.  Tiles that are resampled may have non-integer x, y,
-            width, and height values, and will have an additional dictionary
-            entries of:
+            output size.  Tiles that are resampled will have additional
+            dictionary entries of:
                 scaled: the scaling factor that was applied (less than 1 is
                     downsampled).
                 tile_x, tile_y: (left, top) coordinates before scaling
                 tile_width, tile_height: size of the current tile before
+                    scaling.
+                tile_magnification: magnificaiton of the current tile before
                     scaling.
             Note that scipy.misc.imresize uses PIL internally.
         :param region: a dictionary of optional values which specify the part
@@ -1621,6 +1659,18 @@ class TileSource(object):
         """
         return next(self.tileIteratorAtAnotherScale(*args, **kwargs), None)
 
+    def getTileCount(self, *args, **kwargs):
+        """
+        Return the number of tiles that the tileIterator will return.  See
+        tileIterator for parameters.
+
+        :return: the number of tiles that the tileIterator will yield.
+        """
+        tile = next(self.tileIterator(*args, **kwargs), None)
+        if tile is not None:
+            return tile['iterator_range']['position']
+        return 0
+
     def getAssociatedImagesList(self):
         """
         Return a list of associated images.
@@ -1688,6 +1738,12 @@ class TileSource(object):
 class FileTileSource(TileSource):
 
     def __init__(self, path, *args, **kwargs):
+        """
+        Initialize the tile class.  See the base class for other available
+        parameters.
+
+        :param path: a filesystem path for the tile source.
+        """
         super(FileTileSource, self).__init__(*args, **kwargs)
         self.largeImagePath = path
 
@@ -1729,6 +1785,14 @@ if girder:  # noqa - the whole class is allowed to exceed complexity rules
         girderSource = True
 
         def __init__(self, item, *args, **kwargs):
+            """
+            Initialize the tile class.  See the base class for other available
+            parameters.
+
+            :param item: a Girder item document which contains
+                ['largeImage']['fileId'] identifying the Girder file to be used
+                for the tile source.
+            """
             super(GirderTileSource, self).__init__(item, *args, **kwargs)
             self.item = item
 
@@ -1757,14 +1821,16 @@ if girder:  # noqa - the whole class is allowed to exceed complexity rules
                     # was derived from.  This is always the case if there are 3
                     # or more files.
                     fileIds = [str(file['_id']) for file in Item().childFiles(self.item, limit=3)]
-                    knownIds = [largeImageFileId]
+                    knownIds = [str(largeImageFileId)]
                     if 'originalId' in self.item['largeImage']:
-                        knownIds.append(self.item['largeImage']['originalId'])
+                        knownIds.append(str(self.item['largeImage']['originalId']))
                     self.mayHaveAdjacentFiles = (
                         len(fileIds) >= 3 or
                         fileIds[0] not in knownIds or
                         fileIds[-1] not in knownIds)
                 largeImageFile = File().load(largeImageFileId, force=True)
+                if 'mrxs' in largeImageFile['exts']:
+                    self.mayHaveAdjacentFiles = True
                 largeImagePath = None
                 if self.mayHaveAdjacentFiles and hasattr(File(), 'getGirderMountFilePath'):
                     try:
@@ -1781,7 +1847,7 @@ if girder:  # noqa - the whole class is allowed to exceed complexity rules
                     'No large image file in this item: %s' % e.args[0])
 
 
-def getTileSourceFromDict(availableSources, pathOrUri, user=None, *args,
+def getTileSourceFromDict(availableSources, pathOrUri, user=None, *args,  # noqa
                           **kwargs):
     """
     Get a tile source based on an ordered dictionary of known sources and a
@@ -1796,22 +1862,43 @@ def getTileSourceFromDict(availableSources, pathOrUri, user=None, *args,
     """
     sourceObj = pathOrUri
     uriWithoutProtocol = pathOrUri.split('://', 1)[-1]
+    extensions = [ext.lower() for ext in os.path.basename(uriWithoutProtocol).split('.')[1:]]
     isGirder = pathOrUri.startswith('girder_item://')
     if isGirder and girder:
         sourceObj = Item().load(uriWithoutProtocol, user=user, level=AccessType.READ)
+        try:
+            if sourceObj.get('largeImage', {}).get('fileId'):
+                file = File().load(sourceObj['largeImage']['fileId'], force=True)
+            else:
+                file = Item().childFiles(sourceObj, limit=1)[0]
+            extensions = file['exts']
+        except Exception:
+            pass
     isLargeImageUri = pathOrUri.startswith('large_image://')
-    for sourceName in availableSources:
+    sourceList = []
+    for idx, sourceName in enumerate(availableSources):
+        sourceExtensions = availableSources[sourceName].extensions
+        priority = sourceExtensions.get(None, SourcePriority.MANUAL)
+        for ext in extensions:
+            if ext in sourceExtensions:
+                priority = min(priority, sourceExtensions[ext])
         useSource = False
         girderSource = getattr(availableSources[sourceName], 'girderSource',
                                False)
         if isGirder:
             if girderSource:
-                useSource = availableSources[sourceName].canRead(sourceObj)
+                useSource = True
         elif isLargeImageUri:
             if sourceName == uriWithoutProtocol:
                 useSource = True
+                return availableSources[sourceName](sourceObj, *args, **kwargs)
         elif not girderSource:
-            useSource = availableSources[sourceName].canRead(sourceObj)
+            useSource = True
+        if priority >= SourcePriority.MANUAL:
+            continue
         if useSource:
+            sourceList.append((priority, idx, sourceName))
+    for _priority, idx, sourceName in sorted(sourceList):
+        if availableSources[sourceName].canRead(sourceObj, *args, **kwargs):
             return availableSources[sourceName](sourceObj, *args, **kwargs)
     raise TileSourceException('No available tilesource for %s' % pathOrUri)

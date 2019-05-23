@@ -27,6 +27,7 @@ import PIL
 
 from .base import FileTileSource, TileSourceException
 from ..cache_util import LruCacheMetaclass, methodcache
+from ..constants import SourcePriority
 
 try:
     import girder
@@ -64,12 +65,26 @@ class SVSFileTileSource(FileTileSource):
     """
     cacheName = 'tilesource'
     name = 'svsfile'
+    extensions = {
+        None: SourcePriority.MEDIUM,
+        'bif': SourcePriority.LOW,  # Ventana
+        'mrxs': SourcePriority.PREFERRED,  # MIRAX
+        'ndpi': SourcePriority.PREFERRED,  # Hamamatsu
+        'scn': SourcePriority.LOW,  # Leica
+        'svs': SourcePriority.PREFERRED,
+        'svslide': SourcePriority.PREFERRED,
+        'tif': SourcePriority.MEDIUM,
+        'tiff': SourcePriority.MEDIUM,
+        'vms': SourcePriority.HIGH,  # Hamamatsu
+        'vmu': SourcePriority.HIGH,  # Hamamatsu
+    }
 
     def __init__(self, path, **kwargs):
         """
-        Initialize the tile class.
+        Initialize the tile class.  See the base class for other available
+        parameters.
 
-        :param path: the associated file path.
+        :param path: a filesystem path for the tile source.
         """
         super(SVSFileTileSource, self).__init__(path, **kwargs)
 
@@ -219,7 +234,7 @@ class SVSFileTileSource(FileTileSource):
             mag = self._openslide.properties[
                 openslide.PROPERTY_NAME_OBJECTIVE_POWER]
             mag = float(mag) if mag else None
-        except (KeyError, ValueError):
+        except (KeyError, ValueError, openslide.lowlevel.OpenSlideError):
             mag = None
         try:
             mm_x = float(self._openslide.properties[
@@ -295,7 +310,10 @@ class SVSFileTileSource(FileTileSource):
 
         :return: the list of image keys.
         """
-        return sorted(self._openslide.associated_images)
+        try:
+            return sorted(self._openslide.associated_images)
+        except openslide.lowlevel.OpenSlideError:
+            return []
 
     def _getAssociatedImage(self, imageKey):
         """
@@ -304,8 +322,11 @@ class SVSFileTileSource(FileTileSource):
         :param imageKey: the key of the associated image.
         :return: the image in PIL format or None.
         """
-        if imageKey in self._openslide.associated_images:
-            return self._openslide.associated_images[imageKey]
+        try:
+            if imageKey in self._openslide.associated_images:
+                return self._openslide.associated_images[imageKey]
+        except openslide.lowlevel.OpenSlideError:
+            pass
         return None
 
 

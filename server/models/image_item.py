@@ -25,6 +25,7 @@ import time
 
 from girder.constants import SortDir
 from girder.exceptions import ValidationException
+from girder.models.assetstore import Assetstore
 from girder.models.file import File
 from girder.models.item import Item
 from girder.models.setting import Setting
@@ -35,6 +36,7 @@ from girder.plugins.jobs.models.job import Job
 
 from .base import TileGeneralException
 from .. import constants
+from ..constants import SourcePriority
 from ..tilesource import AvailableTileSources, TileSourceException
 
 
@@ -69,12 +71,21 @@ class ImageItem(Item):
 
         item['largeImage']['fileId'] = fileObj['_id']
         job = None
-        for sourceName in AvailableTileSources:
+        extensions = fileObj['exts']
+        sourceList = []
+        for idx, sourceName in enumerate(AvailableTileSources):
             if getattr(AvailableTileSources[sourceName], 'girderSource',
                        False):
-                if AvailableTileSources[sourceName].canRead(item):
-                    item['largeImage']['sourceName'] = sourceName
-                    break
+                sourceExtensions = AvailableTileSources[sourceName].extensions
+                priority = sourceExtensions.get(None, SourcePriority.MANUAL)
+                for ext in extensions:
+                    if ext in sourceExtensions:
+                        priority = min(priority, sourceExtensions[ext])
+                sourceList.append((priority, idx, sourceName))
+        for _priority, idx, sourceName in sorted(sourceList):
+            if AvailableTileSources[sourceName].canRead(item):
+                item['largeImage']['sourceName'] = sourceName
+                break
         if 'sourceName' not in item['largeImage'] and not createJob:
             raise TileGeneralException(
                 'A job must be used to generate a largeImage.')
@@ -207,7 +218,7 @@ class ImageItem(Item):
         tileMimeType = tileSource.getTileMimeType()
         return tileData, tileMimeType
 
-    def delete(self, item):
+    def delete(self, item, skipFileIds=None):
         deleted = False
         if 'largeImage' in item:
             job = None
@@ -240,7 +251,9 @@ class ImageItem(Item):
                 assert item['largeImage']['originalId'] != \
                     item['largeImage'].get('fileId')
 
-                if 'fileId' in item['largeImage']:
+                if ('fileId' in item['largeImage'] and (
+                        not skipFileIds or
+                        item['largeImage']['fileId'] not in skipFileIds)):
                     file = File().load(id=item['largeImage']['fileId'], force=True)
                     if file:
                         File().remove(file)
@@ -253,7 +266,7 @@ class ImageItem(Item):
         self.removeThumbnailFiles(item)
         return deleted
 
-    def getThumbnail(self, item, width=None, height=None, **kwargs):
+    def getThumbnail(self, item, checkAndCreate=False, width=None, height=None, **kwargs):
         """
         Using a tile source, get a basic thumbnail.  Aspect ratio is
         preserved.  If neither width nor height is given, a default value is
@@ -271,6 +284,10 @@ class ImageItem(Item):
         """
         # check if a thumbnail file exists with a particular key
         keydict = dict(kwargs, width=width, height=height)
+        return self._getAndCacheImage(
+            item, 'getThumbnail', checkAndCreate, keydict, width=width, height=height, **kwargs)
+
+    def _getAndCacheImage(self, item, imageFunc, checkAndCreate, keydict, **kwargs):
         if 'fill' in keydict and (keydict['fill']).lower() == 'none':
             del keydict['fill']
         keydict = {k: v for k, v in six.viewitems(keydict) if v is not None}
@@ -282,14 +299,19 @@ class ImageItem(Item):
             'thumbnailKey': key
         })
         if existing:
+            if checkAndCreate:
+                return True
             if kwargs.get('contentDisposition') != 'attachment':
                 contentDisposition = 'inline'
             else:
                 contentDisposition = kwargs['contentDisposition']
             return File().download(existing, contentDisposition=contentDisposition)
         tileSource = self._loadTileSource(item, **kwargs)
-        thumbData, thumbMime = tileSource.getThumbnail(
-            width, height, **kwargs)
+        result = getattr(tileSource, imageFunc)(**kwargs)
+        if result is None:
+            thumbData, thumbMime = b'', 'application/octet-stream'
+        else:
+            thumbData, thumbMime = result
         # The logic on which files to save could be more sophisticated.
         maxThumbnailFiles = int(Setting().get(
             constants.PluginSettings.LARGE_IMAGE_MAX_THUMBNAIL_FILES))
@@ -302,12 +324,15 @@ class ImageItem(Item):
                 six.BytesIO(thumbData), size=len(thumbData),
                 name='_largeImageThumbnail', parentType='item', parent=item,
                 user=None, mimeType=thumbMime, attachParent=True)
+            if not len(thumbData) and 'received' in thumbfile:
+                thumbfile = Upload().finalizeUpload(
+                    thumbfile, Assetstore().load(thumbfile['assetstoreId']))
             thumbfile.update({
                 'isLargeImageThumbnail': True,
                 'thumbnailKey': key,
             })
             # Ideally, we would check that the file is still wanted before we
-            # save it.  This is probably imposible without true transactions in
+            # save it.  This is probably impossible without true transactions in
             # Mongo.
             File().save(thumbfile)
         # Return the data
@@ -392,7 +417,7 @@ class ImageItem(Item):
         tileSource = self._loadTileSource(item, **kwargs)
         return tileSource.getAssociatedImagesList()
 
-    def getAssociatedImage(self, item, imageKey, *args, **kwargs):
+    def getAssociatedImage(self, item, imageKey, checkAndCreate=False, *args, **kwargs):
         """
         Return an associated image.
 
@@ -403,5 +428,6 @@ class ImageItem(Item):
         :returns: imageData, imageMime: the image data and the mime type, or
             None if the associated image doesn't exist.
         """
-        tileSource = self._loadTileSource(item, **kwargs)
-        return tileSource.getAssociatedImage(imageKey, *args, **kwargs)
+        keydict = dict(kwargs, imageKey=imageKey)
+        return self._getAndCacheImage(
+            item, 'getAssociatedImage', checkAndCreate, keydict, imageKey=imageKey, **kwargs)

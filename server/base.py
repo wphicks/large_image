@@ -125,7 +125,8 @@ def checkForLargeImageFiles(event):
     if mimeType in ('image/tiff', 'image/x-tiff', 'image/x-ptif'):
         possible = True
     exts = file.get('exts')
-    if exts and exts[-1] in ('svs', 'ptif', 'tif', 'tiff', 'ndpi', 'mrxs'):
+    if set(exts[-2:]).intersection({
+            'svs', 'ptif', 'tif', 'tiff', 'ndpi', 'mrxs', 'nc', 'ntf', 'nitf'}):
         possible = True
     if not file.get('itemId') or not possible:
         return
@@ -177,6 +178,18 @@ def handleCopyItem(event):
         Item().save(newItem, triggerEvents=False)
 
 
+def handleRemoveFile(event):
+    """
+    When a file is removed, check if it is a largeImage fileId.  If so, delete
+    the largeImage record.
+    """
+    fileObj = event.info
+    if fileObj.get('itemId'):
+        item = Item().load(fileObj['itemId'], force=True, exc=False)
+        if item and 'largeImage' in item and item['largeImage'].get('fileId') == fileObj['_id']:
+            ImageItem().delete(item, [fileObj['_id']])
+
+
 # Validators
 
 @setting_utilities.validator({
@@ -193,6 +206,7 @@ def validateBoolean(doc):
 
 
 @setting_utilities.validator({
+    constants.PluginSettings.LARGE_IMAGE_SHOW_EXTRA_PUBLIC,
     constants.PluginSettings.LARGE_IMAGE_SHOW_EXTRA,
     constants.PluginSettings.LARGE_IMAGE_SHOW_EXTRA_ADMIN,
 })
@@ -285,3 +299,16 @@ def load(info):
                 checkForLargeImageFiles)
     events.bind('model.item.remove', 'large_image', removeThumbnails)
     events.bind('server_fuse.unmount', 'large_image', cache_util.cachesClear)
+    events.bind('model.file.remove', 'large_image', handleRemoveFile)
+
+    # add copyAnnotations option to POST resource/copy, POST item/{id}/copy and
+    # POST folder/{id}/copy
+    info['apiRoot'].resource.copyResources.description.param(
+        'copyAnnotations', 'Copy annotations when copying resources (default true)',
+        required=False, dataType='boolean')
+    info['apiRoot'].item.copyItem.description.param(
+        'copyAnnotations', 'Copy annotations when copying item (default true)',
+        required=False, dataType='boolean')
+    info['apiRoot'].folder.copyFolder.description.param(
+        'copyAnnotations', 'Copy annotations when copying folder (default true)',
+        required=False, dataType='boolean')

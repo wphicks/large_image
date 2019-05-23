@@ -116,7 +116,8 @@ class LargeImageSourcesTest(common.LargeImageCommonTest):
         source = ImageItem().tileSource(item)
         tileCount = 0
         visited = {}
-        for tile in source.tileIterator(scale={'magnification': 5}):
+        for tile in source.tileIterator(
+                format=tilesource.TILE_FORMAT_PIL, scale={'magnification': 5}):
             # Check that we haven't loaded the tile's image yet
             self.assertFalse(getattr(tile, 'loaded', None))
             visited.setdefault(tile['level_x'], {})[tile['level_y']] = True
@@ -147,27 +148,39 @@ class LargeImageSourcesTest(common.LargeImageCommonTest):
         self.assertEqual(tileCount, 144)
         # Check with a non-native magnfication without resampling
         tileCount = 0
-        for tile in source.tileIterator(scale={'magnification': 2}):
+        for tile in source.tileIterator(
+                format=tilesource.TILE_FORMAT_PIL, scale={'magnification': 2}, resample=False):
             tileCount += 1
             self.assertEqual(tile['tile'].size, (tile['width'], tile['height']))
             self.assertEqual(tile['width'], 256 if tile['level_x'] < 11 else 61)
             self.assertEqual(tile['height'], 256 if tile['level_y'] < 11 else 79)
         self.assertEqual(tileCount, 144)
+        self.assertEqual(source.getTileCount(
+            format=tilesource.TILE_FORMAT_PIL, scale={'magnification': 2}, resample=False), 144)
         # Check with a non-native magnfication with resampling
         tileCount = 0
         for tile in source.tileIterator(
-                scale={'magnification': 2}, resample=True):
+                format=tilesource.TILE_FORMAT_PIL, scale={'magnification': 2}, resample=True):
             tileCount += 1
             self.assertEqual(tile['tile'].size, (tile['width'], tile['height']))
             self.assertEqual(tile['width'], 256 if tile['level_x'] < 4 else 126)
             self.assertEqual(tile['height'], 256 if tile['level_y'] < 4 else 134)
         self.assertEqual(tileCount, 25)
+        self.assertEqual(source.getTileCount(
+            format=tilesource.TILE_FORMAT_PIL, scale={'magnification': 2}, resample=True), 25)
+        # Check that the default is with resampling
+        tileCount = len(list(source.tileIterator(
+            format=tilesource.TILE_FORMAT_PIL, scale={'magnification': 2})))
+        self.assertEqual(tileCount, 25)
+        self.assertEqual(source.getTileCount(
+            format=tilesource.TILE_FORMAT_PIL, scale={'magnification': 2}), 25)
+        # Asking for exact scale should result in no tiles.
+        self.assertEqual(source.getTileCount(
+            format=tilesource.TILE_FORMAT_PIL, scale={'magnification': 2, 'exact': True}), 0)
 
         # Ask for numpy array as results
         tileCount = 0
-        for tile in source.tileIterator(
-                scale={'magnification': 5},
-                format=tilesource.TILE_FORMAT_NUMPY):
+        for tile in source.tileIterator(scale={'magnification': 5}):
             tileCount += 1
             self.assertTrue(isinstance(tile['tile'], numpy.ndarray))
             self.assertEqual(tile['tile'].shape, (
@@ -555,7 +568,7 @@ class LargeImageSourcesTest(common.LargeImageCommonTest):
         tileCount = 0
         for tile in source.tileIteratorAtAnotherScale(
                 sourceRegion, sourceScale, targetScale,
-                format=tilesource.TILE_FORMAT_NUMPY):
+                format=tilesource.TILE_FORMAT_NUMPY, resample=False):
             tileCount += 1
         self.assertEqual(tileCount, 72)
         with six.assertRaisesRegex(self, TypeError, 'unexpected keyword'):

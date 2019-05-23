@@ -26,7 +26,7 @@ export default AccessControlledModel.extend({
 
     initialize() {
         this._region = {
-            maxDetails: 100000,
+            maxDetails: 250000,
             sort: 'size',
             sortdir: -1
         };
@@ -99,6 +99,21 @@ export default AccessControlledModel.extend({
                 nextFetch();
             }
         });
+    },
+
+    /**
+     * Get/set for a refresh flag.
+     *
+     * @param {boolean} [val] If specified, set the refresh flag.  If not
+     *    specified, return the refresh flag.
+     * @returns {boolean|this}
+     */
+    refresh(val) {
+        if (val === undefined) {
+            return self._refresh;
+        }
+        self._refresh = val;
+        return this;
     },
 
     /**
@@ -204,12 +219,14 @@ export default AccessControlledModel.extend({
      * Callers should listen for the g:fetched event to know when new elements
      * have been fetched.
      *
-     * @param {object} bounds: the corners of the visible region.  This is an
+     * @param {object} bounds the corners of the visible region.  This is an
      *      object with left, top, right, bottom in pixels.
-     * @param {number} zoom: the zoom factor.
-     * @param {number} maxZoom: the maximum zoom factor.
+     * @param {number} zoom the zoom factor.
+     * @param {number} maxZoom the maximum zoom factor.
+     * @param {boolean} noFetch Truthy to not perform a fetch if the view
+     *  changes.
      */
-    setView(bounds, zoom, maxZoom) {
+    setView(bounds, zoom, maxZoom, noFetch) {
         if (this._pageElements === false || this.isNew()) {
             return;
         }
@@ -234,7 +251,10 @@ export default AccessControlledModel.extend({
         this._region.bottom = bounds.bottom + yoverlap;
         /* ask for items that will be at least 0.5 pixels, minus a bit */
         this._lastZoom = zoom;
-        this._region.minSize = Math.pow(2, maxZoom - zoom - 1) - 1;
+        this._region.minimumSize = Math.pow(2, maxZoom - zoom - 1) - 1;
+        if (noFetch) {
+            return;
+        }
         if (!this._nextFetch) {
             var nextFetch = () => {
                 this.fetch();

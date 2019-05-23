@@ -3,6 +3,7 @@ language: python
 python:
   - "2.7"
   - "3.5"
+  - "3.6"
 
 env:
   matrix:
@@ -12,6 +13,8 @@ env:
 matrix:
   exclude:
   - python: "3.5"
+    env: LIBTIFF_VERSION=4.0.3 LIBTIFF_DIR=/old OPENJPEG_VERSION=2.1   OPENJPEG_FILE=version.2.1.tar.gz OPENJPEG_DIR="openjpeg-version.2.1"
+  - python: "3.6"
     env: LIBTIFF_VERSION=4.0.3 LIBTIFF_DIR=/old OPENJPEG_VERSION=2.1   OPENJPEG_FILE=version.2.1.tar.gz OPENJPEG_DIR="openjpeg-version.2.1"
 
 cache:
@@ -101,7 +104,7 @@ before_install:
   - if [ ${TRAVIS_PYTHON_VERSION:0:1} == "3" ]; then export PY3="true"; else export PY2="true"; fi
   - if [ -n "${PY3}" ]; then export MONGO_VERSION=3.6.2; export PY_COVG="OFF"; else export MONGO_VERSION=3.4.10; export PY_COVG="ON"; export DEPLOY=true; fi
   - GIRDER_VERSION=2.x-maintenance
-  - GIRDER_WORKER_VERSION=master
+  - GIRDER_WORKER_VERSION=v0.5.1
 
   # Define installation paths
   - large_image_path=$TRAVIS_BUILD_DIR
@@ -167,16 +170,16 @@ before_install:
   # Build vips to use our libraries
   - if [ "$BUILD_VIPS" = "yes" ]; then
       cd $lib_build_path &&
-      if [ ! -f vips-8.5.9/config.status ]; then
-        if [[ ! -d vips-8.5.9 ]]; then
-          wget -O vips-8.5.9.tar.gz https://github.com/jcupitt/libvips/releases/download/v8.5.9/vips-8.5.9.tar.gz &&
-          tar -zxpf vips-8.5.9.tar.gz ;
+      if [ ! -f vips-8.7.0/config.status ]; then
+        if [[ ! -d vips-8.7.0 ]]; then
+          wget -O vips-8.7.0.tar.gz https://github.com/libvips/libvips/releases/download/v8.7.0/vips-8.7.0.tar.gz &&
+          tar -zxpf vips-8.7.0.tar.gz ;
         fi &&
-        cd vips-8.5.9 &&
+        cd vips-8.7.0 &&
         ./configure &&
         make -j 3 >/tmp/vips_build.txt ;
       else
-        cd vips-8.5.9 ;
+        cd vips-8.7.0 ;
       fi &&
       sudo make install &&
       sudo ldconfig ;

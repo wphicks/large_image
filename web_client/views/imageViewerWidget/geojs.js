@@ -30,6 +30,7 @@ var GeojsImageViewerWidget = ImageViewerWidget.extend({
         this._annotations = {};
         this._featureOpacity = {};
         this._globalAnnotationOpacity = settings.globalAnnotationOpacity || 1.0;
+        this._globalAnnotationFillOpacity = settings.globalAnnotationFillOpacity || 1.0;
         this._highlightFeatureSizeLimit = settings.highlightFeatureSizeLimit || 10000;
         this.listenTo(events, 's:widgetDrawRegion', this.drawRegion);
         this.listenTo(events, 'g:startDrawMode', this.startDrawMode);
@@ -108,9 +109,13 @@ var GeojsImageViewerWidget = ImageViewerWidget.extend({
             this.viewer.createLayer('osm');
             this.viewer.createLayer('osm', params);
         }
+        this.viewer.geoOn(geo.event.pan, () => {
+            this.setBounds();
+        });
         if (this._scale && (this.metadata.mm_x || this.metadata.geospatial || this._scale.scale)) {
             if (!this._scale.scale && !this.metadata.geospatial) {
-                this._scale.scale = this.metadata.mm_x / 100;
+                // convert mm to m.
+                this._scale.scale = this.metadata.mm_x / 1000;
             }
             this.uiLayer = this.viewer.createLayer('ui');
             this.scaleWidget = this.uiLayer.createWidget('scale', this._scale);
@@ -120,7 +125,7 @@ var GeojsImageViewerWidget = ImageViewerWidget.extend({
             features: ['point', 'line', 'polygon']
         });
         this.setGlobalAnnotationOpacity(this._globalAnnotationOpacity);
-        this.featureLayer.geoOn(window.geo.event.pan, () => { this.setBounds(); });
+        this.setGlobalAnnotationFillOpacity(this._globalAnnotationFillOpacity);
         // the annotation layer is for annotations that are actively drawn
         this.annotationLayer = this.viewer.createLayer('annotation', {
             annotations: ['point', 'line', 'rectangle', 'polygon'],
@@ -179,7 +184,7 @@ var GeojsImageViewerWidget = ImageViewerWidget.extend({
             options: options,
             annotation: annotation
         };
-        if (options.fetch && !present) {
+        if (options.fetch && (!present || annotation.refresh())) {
             annotation.off('g:fetched', null, this).on('g:fetched', () => {
                 // Trigger an event indicating to the listener that
                 // mouseover states should reset.
@@ -191,9 +196,10 @@ var GeojsImageViewerWidget = ImageViewerWidget.extend({
             }, this);
             this.setBounds({[annotation.id]: this._annotations[annotation.id]});
         }
+        annotation.refresh(false);
         var featureList = this._annotations[annotation.id].features;
         this._featureOpacity[annotation.id] = {};
-        window.geo.createFileReader('jsonReader', {layer: this.featureLayer})
+        geo.createFileReader('jsonReader', {layer: this.featureLayer})
             .read(geojson, (features) => {
                 _.each(features || [], (feature) => {
                     var events = geo.event.feature;
@@ -226,7 +232,7 @@ var GeojsImageViewerWidget = ImageViewerWidget.extend({
                     }
                 });
                 this._mutateFeaturePropertiesForHighlight(annotation.id, features);
-                this.viewer.draw();
+                this.viewer.scheduleAnimationFrame(this.viewer.draw);
             });
     },
 
@@ -268,13 +274,25 @@ var GeojsImageViewerWidget = ImageViewerWidget.extend({
                 // this slows down interactivity considerably.
                 return;
             }
+            var prop = {
+                datalen: data.length,
+                annotationId: annotationId,
+                fillOpacity: this._globalAnnotationFillOpacity,
+                highlightannot: this._highlightAnnotation,
+                highlightelem: this._highlightElement
+            };
+
+            if (_.isMatch(feature._lastFeatureProp, prop)) {
+                return;
+            }
+
             // pre-allocate arrays for performance
             const fillOpacityArray = new Array(data.length);
             const strokeOpacityArray = new Array(data.length);
 
             for (let i = 0; i < data.length; i += 1) {
                 const id = data[i].id;
-                const fillOpacity = data[i].fillOpacity;
+                const fillOpacity = data[i].fillOpacity * this._globalAnnotationFillOpacity;
                 const strokeOpacity = data[i].strokeOpacity;
                 if (!this._highlightAnnotation ||
                     (!this._highlightElement && annotationId === this._highlightAnnotation) ||
@@ -289,6 +307,7 @@ var GeojsImageViewerWidget = ImageViewerWidget.extend({
 
             feature.updateStyleFromArray('fillOpacity', fillOpacityArray);
             feature.updateStyleFromArray('strokeOpacity', strokeOpacityArray);
+            feature._lastFeatureProp = prop;
         });
     },
 
@@ -335,7 +354,7 @@ var GeojsImageViewerWidget = ImageViewerWidget.extend({
             });
             delete this._annotations[annotation.id];
             delete this._featureOpacity[annotation.id];
-            this.featureLayer.draw();
+            this.viewer.scheduleAnimationFrame(this.viewer.draw);
         }
     },
 
@@ -430,6 +449,18 @@ var GeojsImageViewerWidget = ImageViewerWidget.extend({
         return this;
     },
 
+    setGlobalAnnotationFillOpacity: function (opacity) {
+        this._globalAnnotationFillOpacity = opacity;
+        if (this.featureLayer) {
+            _.each(this._annotations, (layer, annotationId) => {
+                const features = layer.features;
+                this._mutateFeaturePropertiesForHighlight(annotationId, features);
+            });
+            this.viewer.scheduleAnimationFrame(this.viewer.draw);
+        }
+        return this;
+    },
+
     _setEventTypes: function () {
         var events = window.geo.event.feature;
         this._eventTypes = {
@@ -456,7 +487,8 @@ var GeojsImageViewerWidget = ImageViewerWidget.extend({
                 this.trigger(
                     eventType,
                     properties.element,
-                    properties.annotation
+                    properties.annotation,
+                    evt
                 );
             }
         }

@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import json
+import platform
 
 try:
     from setuptools import setup
@@ -49,24 +50,27 @@ setup(
         'Programming Language :: Python :: 2',
         'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.4'
+        'Programming Language :: Python :: 3.5'
+        'Programming Language :: Python :: 3.6'
         'Topic :: Software Development :: Libraries :: Python Modules',
     ],
     include_package_data=True,
     install_requires=[
-        'cachetools>=2.0.0',
+        'cachetools>=3.0.0',
         'enum34>=1.1.6',
+        'futures;python_version<"3.4"',
         'jsonschema>=2.5.1',
         'libtiff>=0.4.1',
         'numpy>=1.10.2',
         'Pillow>=3.2.0',
         'psutil>=4.2.0',
-        'six>=1.10.0'
+        'six>=1.10.0',
+        'ujson>=1.35',
     ],
     extras_require={
         'memcached': [
-            'pylibmc>=1.5.1;platform_system!="Windows"'
-        ],
+            'pylibmc>=1.5.1'
+        ] if platform.system() != 'Windows' else [],
         'openslide': [
             'openslide-python>=1.1.0'
         ],

@@ -17,11 +17,12 @@
 #  limitations under the License.
 #############################################################################
 
+import glob
+import json
 import os
 import PIL.Image
 import PIL.ImageChops
 import six
-import json
 
 from girder import config
 from tests import base
@@ -45,6 +46,30 @@ def tearDownModule():
 
 
 class LargeImageSourceMapnikTest(common.LargeImageCommonTest):
+
+    def _assertImageMatches(self, image, testRootName, saveTestImageFailurePath='/tmp'):
+        """
+        Check if an image matches any of a set of images.
+
+        Adapted from:
+        https://stackoverflow.com/questions/35176639/compare-images-python-pil
+
+        :param image: PIL image to compare.
+        :param testRootName: base name of the images to test.  These images are
+            globbed in test_files/<testRootName>*.png.
+        :param saveTestImageFailurePath: if the image doesn't match any of the
+            test images, if this value is set, save the image to make it easier
+            to determine why it failed.
+        """
+        testImagePaths = glob.glob(os.path.join(
+            os.path.dirname(__file__), 'test_files', testRootName + '*.png'))
+        testImages = [PIL.Image.open(testImagePath).convert('RGBA')
+                      for testImagePath in testImagePaths]
+        diffs = [PIL.ImageChops.difference(image, testImage).getbbox()
+                 for testImage in testImages]
+        if None not in diffs and saveTestImageFailurePath:
+            image.save(os.path.join(saveTestImageFailurePath, testRootName + '_test.png'))
+        self.assertIn(None, diffs)
 
     def testTileFromGeotiffs(self):
         file = self._uploadFile(os.path.join(
@@ -93,27 +118,15 @@ class LargeImageSourceMapnikTest(common.LargeImageCommonTest):
 
         resp = self.request(
             path='/item/%s/tiles/zxy/9/89/207' % itemId, user=self.admin,
-            isJson=False, params={'encoding': 'PNG', 'projection': 'EPSG:3857'})
+            isJson=False, params={
+                'encoding': 'PNG',
+                'projection': 'EPSG:3857',
+                'style': json.dumps({'band': -1}),
+            })
 
         self.assertStatusOk(resp)
         image = PIL.Image.open(six.BytesIO(self.getBody(resp, text=False)))
-        testImage = os.path.join(
-            os.path.dirname(__file__), 'test_files', 'geotiff_9_89_207.png')
-
-        testImagePy3 = os.path.join(
-            os.path.dirname(__file__), 'test_files', 'geotiff_9_89_207_py3.png')
-
-        testImage = PIL.Image.open(testImage)
-        testImagePy3 = PIL.Image.open(testImagePy3)
-
-        # https://stackoverflow.com/questions/35176639/compare-images-python-pil
-        diffs = [
-            PIL.ImageChops.difference(image, testImage).getbbox(),
-            PIL.ImageChops.difference(image, testImagePy3).getbbox()
-        ]
-
-        # If one of the diffs is None (means the images are same)
-        self.assertIn(None, diffs)
+        self._assertImageMatches(image, 'geotiff_9_89_207')
 
     def testTileStyleFromGeotiffs(self):
         file = self._uploadFile(os.path.join(
@@ -130,21 +143,7 @@ class LargeImageSourceMapnikTest(common.LargeImageCommonTest):
 
         self.assertStatusOk(resp)
         image = PIL.Image.open(six.BytesIO(self.getBody(resp, text=False)))
-        testImage = os.path.join(
-            os.path.dirname(__file__), 'test_files', 'geotiff_style_7_22_51.png')
-
-        testImagePy3 = os.path.join(
-            os.path.dirname(__file__), 'test_files', 'geotiff_style_7_22_51_py3.png')
-
-        testImage = PIL.Image.open(testImage)
-        testImagePy3 = PIL.Image.open(testImagePy3)
-
-        diffs = [
-            PIL.ImageChops.difference(image, testImage).getbbox(),
-            PIL.ImageChops.difference(image, testImagePy3).getbbox()
-        ]
-
-        self.assertIn(None, diffs)
+        self._assertImageMatches(image, 'geotiff_style_7_22_51')
 
     def testTileLinearStyleFromGeotiffs(self):
         file = self._uploadFile(os.path.join(
@@ -162,21 +161,7 @@ class LargeImageSourceMapnikTest(common.LargeImageCommonTest):
 
         self.assertStatusOk(resp)
         image = PIL.Image.open(six.BytesIO(self.getBody(resp, text=False)))
-        testImage = os.path.join(
-            os.path.dirname(__file__), 'test_files', 'geotiff_style_linear_7_22_51.png')
-
-        testImagePy3 = os.path.join(
-            os.path.dirname(__file__), 'test_files', 'geotiff_style_linear_7_22_51_py3.png')
-
-        testImage = PIL.Image.open(testImage)
-        testImagePy3 = PIL.Image.open(testImagePy3)
-
-        diffs = [
-            PIL.ImageChops.difference(image, testImage).getbbox(),
-            PIL.ImageChops.difference(image, testImagePy3).getbbox()
-        ]
-
-        self.assertIn(None, diffs)
+        self._assertImageMatches(image, 'geotiff_style_linear_7_22_51')
 
     def _assertStyleResponse(self, itemId, style, message):
         style = json.dumps(style)
@@ -188,7 +173,7 @@ class LargeImageSourceMapnikTest(common.LargeImageCommonTest):
         body = resp.body[0]
         if isinstance(body, six.binary_type):
             body = body.decode('utf8')
-        self.assertEquals(json.loads(body)['message'], message)
+        self.assertIn(message, json.loads(body)['message'])
 
     def testTileStyleBadInput(self):
         file = self._uploadFile(os.path.join(
@@ -197,37 +182,42 @@ class LargeImageSourceMapnikTest(common.LargeImageCommonTest):
         itemId = str(file['itemId'])
 
         self._assertStyleResponse(itemId, {
-            'band': 1.0,
-            'min': 0,
-            'max': 100,
-            'palette': 'matplotlib.Plasma_6'
-        }, 'Band has to be an integer.')
+            'band': 1.1,
+        }, 'Band has to be a positive integer, -1, or a band interpretation found in the source.')
+
+        self._assertStyleResponse(itemId, {
+            'band': 500,
+        }, 'Band has to be a positive integer, -1, or a band interpretation found in the source.')
 
         self._assertStyleResponse(itemId, {
             'band': 1,
             'min': 'min',
             'max': 100,
-            'palette': 'matplotlib.Plasma_6'
-        }, 'Minimum and maximum values should be numbers.')
+        }, 'Minimum and maximum values should be numbers or "auto".')
 
         self._assertStyleResponse(itemId, {
             'band': 1,
             'min': 0,
             'max': 'max',
-            'palette': 'matplotlib.Plasma_6'
-        }, 'Minimum and maximum values should be numbers.')
+        }, 'Minimum and maximum values should be numbers or "auto".')
 
         self._assertStyleResponse(itemId, {
             'band': 1,
-            'min': 0,
-            'max': 100,
             'palette': 'nonexistent.palette'
         }, 'Palette is not a valid palettable path.')
 
         self._assertStyleResponse(itemId, {
             'band': 1,
-            'min': 0,
-            'max': 100,
+            'palette': ['notacolor', '#00ffff']
+        }, 'Mapnik failed to parse color')
+
+        self._assertStyleResponse(itemId, {
+            'band': 1,
+            'palette': ['#00ffff']
+        }, 'A palette must have at least 2 colors.')
+
+        self._assertStyleResponse(itemId, {
+            'band': 1,
             'palette': 'matplotlib.Plasma_6',
             'scheme': 'some_invalid_scheme'
         }, 'Scheme has to be either "discrete" or "linear".')
@@ -326,6 +316,24 @@ class LargeImageSourceMapnikTest(common.LargeImageCommonTest):
         self.assertStatusOk(resp)
         self.assertEqual(resp.json, {
             'r': 225, 'g': 100, 'b': 98, 'a': 255, 'bands': {'1': 77.0, '2': 82.0, '3': 84.0}})
+        # Test with palette as an array of colors
+        resp = self.request(
+            path='/item/%s/tiles/pixel' % itemId, user=self.admin,
+            params={
+                'left': -13132910,
+                'top': 4010586,
+                'projection': 'EPSG:3857',
+                'units': 'projection',
+                'style': json.dumps({
+                    'band': 1,
+                    'min': 0,
+                    'max': 100,
+                    'palette': ['#0000ff', '#00ff00', '#ff0000']
+                }),
+            })
+        self.assertStatusOk(resp)
+        self.assertEqual(resp.json, {
+            'r': 0, 'g': 255, 'b': 0, 'a': 255, 'bands': {'1': 77.0, '2': 82.0, '3': 84.0}})
         # Test with projection units
         resp = self.request(
             path='/item/%s/tiles/pixel' % itemId, user=self.admin,
@@ -464,4 +472,4 @@ class LargeImageSourceMapnikTest(common.LargeImageCommonTest):
         self.assertEqual(bounds['xmin'], -180.00416667)
         self.assertEqual(bounds['xmax'], 179.99583333)
         self.assertEqual(bounds['ymin'], -89.99583333)
-        self.assertEqual(bounds['ymax'], 89.999999)
+        self.assertEqual(bounds['ymax'], 90)

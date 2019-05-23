@@ -392,6 +392,46 @@ class LargeImageAnnotationTest(common.LargeImageCommonTest):
         self.assertEqual(len(Annotation().revertVersion(
             annot['_id'], user=self.admin)['annotation']['elements']), 1)
 
+    def testAnnotationsAfterCopyItem(self):
+        from girder.plugins.large_image.models.annotation import Annotation
+        item = Item().createItem('sample', self.admin, self.publicFolder)
+        Annotation().createAnnotation(item, self.admin, sampleAnnotation)
+        resp = self.request(
+            '/annotation', user=self.admin, params={'itemId': item['_id']})
+        self.assertStatusOk(resp)
+        self.assertTrue(len(resp.json) == 1)
+        resp = self.request(
+            '/item/%s/copy' % item['_id'], method='POST', user=self.admin)
+        self.assertStatusOk(resp)
+        resp = self.request(
+            '/annotation', user=self.admin, params={'itemId': resp.json['_id']})
+        self.assertStatusOk(resp)
+        self.assertTrue(len(resp.json) == 1)
+        resp = self.request(
+            '/item/%s/copy' % item['_id'], method='POST', user=self.admin,
+            params={'copyAnnotations': 'true'})
+        self.assertStatusOk(resp)
+        resp = self.request(
+            '/annotation', user=self.admin, params={'itemId': resp.json['_id']})
+        self.assertStatusOk(resp)
+        self.assertTrue(len(resp.json) == 1)
+        resp = self.request(
+            '/item/%s/copy' % item['_id'], method='POST', user=self.admin,
+            params={'copyAnnotations': 'false'})
+        self.assertStatusOk(resp)
+        resp = self.request(
+            '/annotation', user=self.admin, params={'itemId': resp.json['_id']})
+        self.assertStatusOk(resp)
+        self.assertTrue(len(resp.json) == 0)
+        resp = self.request(
+            '/item/%s/copy' % item['_id'], method='POST', user=self.admin,
+            params={'copyAnnotations': True})
+        self.assertStatusOk(resp)
+        resp = self.request(
+            '/annotation', user=self.admin, params={'itemId': resp.json['_id']})
+        self.assertStatusOk(resp)
+        self.assertTrue(len(resp.json) == 1)
+
 
 class LargeImageAnnotationElementTest(common.LargeImageCommonTest):
     def testInitialize(self):
@@ -661,6 +701,80 @@ class LargeImageAnnotationRestTest(common.LargeImageCommonTest):
         self.assertStatusOk(resp)
         self.assertIsNotNone(resp.json)
 
+    def testItemAnnotationEndpoints(self):
+        from girder.plugins.large_image.models.annotation import Annotation
+
+        # create two annotations on an item
+        itemSrc = Item().createItem('sample', self.admin, self.publicFolder)
+        annot = Annotation().createAnnotation(itemSrc, self.admin, sampleAnnotation)
+        annot = Annotation().setPublic(annot, False, True)
+        Annotation().createAnnotation(itemSrc, self.admin, sampleAnnotationEmpty)
+        # Get all annotations for that item as the user
+        resp = self.request(
+            path='/annotation/item/{}'.format(itemSrc['_id']),
+            user=self.user
+        )
+        self.assertStatusOk(resp)
+        self.assertEqual(len(resp.json), 1)
+        self.assertEqual(len(resp.json[0]['annotation']['elements']), 0)
+
+        # Get all annotations for that item as the admin
+        resp = self.request(
+            path='/annotation/item/{}'.format(itemSrc['_id']),
+            user=self.admin
+        )
+        self.assertStatusOk(resp)
+        annotList = resp.json
+        self.assertEqual(len(annotList), 2)
+        self.assertEqual(annotList[0]['annotation']['elements'][0]['center'],
+                         annot['annotation']['elements'][0]['center'])
+        self.assertEqual(len(annotList[1]['annotation']['elements']), 0)
+
+        # Create a new item
+        itemDest = Item().createItem('sample', self.admin, self.publicFolder)
+
+        # Set the annotations on the new item
+        resp = self.request(
+            path='/annotation/item/{}'.format(itemDest['_id']),
+            method='POST',
+            user=self.admin,
+            type='application/json',
+            body=json.dumps(annotList)
+        )
+        self.assertStatusOk(resp)
+        self.assertEqual(resp.json, 2)
+
+        # Check if the annotations are in the destination item
+        resp = self.request(
+            path='/annotation',
+            method='GET',
+            user=self.admin,
+            params={
+                'itemId': itemDest.get('_id'),
+                'name': 'sample'
+            }
+        )
+        self.assertStatusOk(resp)
+        self.assertIsNotNone(resp.json)
+
+        # Check failure conditions
+        resp = self.request(
+            path='/annotation/item/{}'.format(itemDest['_id']),
+            method='POST',
+            user=self.admin,
+            type='application/json',
+            body=json.dumps(['not an object'])
+        )
+        self.assertStatus(resp, 400)
+        resp = self.request(
+            path='/annotation/item/{}'.format(itemDest['_id']),
+            method='POST',
+            user=self.admin,
+            type='application/json',
+            body=json.dumps([{'key': 'not an annotation'}])
+        )
+        self.assertStatus(resp, 400)
+
     def testDeleteAnnotation(self):
         from girder.plugins.large_image.models.annotation import Annotation
         from girder.plugins.large_image import constants
@@ -861,6 +975,13 @@ class LargeImageAnnotationRestTest(common.LargeImageCommonTest):
             user=self.user
         )
         self.assertStatus(resp, 403)
+        # The admin should still be able to get the annotation with elements
+        resp = self.request(
+            '/annotation/%s' % annot['_id'],
+            user=self.admin
+        )
+        self.assertStatusOk(resp)
+        self.assertEqual(len(resp.json['annotation']['elements']), 1)
 
         # Give the user admin access
         access['users'].append({

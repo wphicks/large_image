@@ -26,6 +26,7 @@ from six.moves import range
 
 from .base import FileTileSource, TileSourceException
 from ..cache_util import LruCacheMetaclass, methodcache
+from ..constants import SourcePriority
 from .tiff_reader import TiledTiffDirectory, TiffException, \
     InvalidOperationTiffException, IOTiffException, ValidationTiffException
 
@@ -52,9 +53,22 @@ class TiffFileTileSource(FileTileSource):
     """
     cacheName = 'tilesource'
     name = 'tifffile'
+    extensions = {
+        None: SourcePriority.MEDIUM,
+        'tif': SourcePriority.PREFERRED,
+        'tiff': SourcePriority.PREFERRED,
+        'ptif': SourcePriority.PREFERRED,
+        'ptiff': SourcePriority.PREFERRED,
+    }
 
-    def __init__(self, item, **kwargs):
-        super(TiffFileTileSource, self).__init__(item, **kwargs)
+    def __init__(self, path, **kwargs):
+        """
+        Initialize the tile class.  See the base class for other available
+        parameters.
+
+        :param path: a filesystem path for the tile source.
+        """
+        super(TiffFileTileSource, self).__init__(path, **kwargs)
 
         largeImagePath = self._getLargeImagePath()
         lastException = None

@@ -107,7 +107,7 @@ $(function () {
                 hoverEvents: true
             });
             viewer.once('g:beforeFirstRender', function () {
-                window.geo.util.mockVGLRenderer();
+                window.geo.util.mockWebglRenderer();
             });
             waitsFor(function () {
                 return $('.geojs-layer.active').length >= 1;
@@ -122,6 +122,7 @@ $(function () {
         });
 
         it('drawAnnotation', function () {
+            var setViewSpy, firstCount;
             runs(function () {
                 annotation = new large_image.models.AnnotationModel({
                     _id: annotationId
@@ -131,7 +132,7 @@ $(function () {
 
             girderTest.waitForLoad();
             runs(function () {
-                sinon.spy(annotation, 'setView');
+                setViewSpy = sinon.spy(annotation, 'setView');
                 viewer.drawAnnotation(annotation);
                 viewer.viewer.zoom(5);
             });
@@ -145,7 +146,11 @@ $(function () {
                 featureSpy = sinon.spy(viewer._annotations[annotationId].features[0], '_exit');
 
                 sinon.assert.called(annotation.setView);
+                firstCount = setViewSpy.callCount;
+                viewer.viewer.zoomRange({max: 12});
+                viewer.viewer.zoom(12);
                 viewer.viewer.zoom(1);
+                expect(setViewSpy.callCount).toBe(firstCount + 2);
             });
         });
 
@@ -529,6 +534,51 @@ $(function () {
             });
         });
 
+        describe('global annotation fill opacity', function () {
+            var annotation1;
+            var element1 = '111111111111111111111111';
+
+            it('generate test annotations', function () {
+                girder.rest.restRequest({
+                    url: 'annotation?itemId=' + itemId,
+                    contentType: 'application/json',
+                    processData: false,
+                    type: 'POST',
+                    data: JSON.stringify({
+                        name: 'annotation1',
+                        elements: [{
+                            id: element1,
+                            type: 'rectangle',
+                            center: [200, 200, 0],
+                            width: 400,
+                            height: 400,
+                            rotation: 0,
+                            fillColor: '#000'
+                        }]
+                    })
+                }).done(function (resp) {
+                    annotation1 = new large_image.models.AnnotationModel({
+                        _id: resp._id
+                    });
+                });
+                waitsFor(function () {
+                    return annotation1;
+                }, 'annotations to be created');
+                runs(function () {
+                    viewer.drawAnnotation(annotation1);
+                });
+                girderTest.waitForLoad();
+            });
+            it('set global fill annotation opacity', function () {
+                var polygonFeature = viewer.viewer.layers()[1].features()[2];
+                expect(polygonFeature.style.get('fillOpacity')(null, 0, null, 0)).toBe(1);
+                viewer.setGlobalAnnotationFillOpacity(0.5);
+                expect(polygonFeature.style.get('fillOpacity')(null, 0, null, 0)).toBe(0.5);
+                viewer.setGlobalAnnotationFillOpacity(1);
+                expect(polygonFeature.style.get('fillOpacity')(null, 0, null, 0)).toBe(1);
+            });
+        });
+
         describe('highlight annotations', function () {
             var annotation1, annotation2;
             var element11 = '111111111111111111111111';
@@ -658,7 +708,7 @@ $(function () {
                 scale: {position: {bottom: 20, right: 10}, scale: 0.0005}
             });
             viewer.once('g:beforeFirstRender', function () {
-                window.geo.util.mockVGLRenderer();
+                window.geo.util.mockWebglRenderer();
             });
             waitsFor(function () {
                 return $('.geojs-layer.active').length >= 1 && viewer.scaleWidget;

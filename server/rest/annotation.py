@@ -18,18 +18,21 @@
 ##############################################################################
 
 import json
+import ujson
 
 import cherrypy
 
 from girder import logger
 from girder.api import access
 from girder.api.describe import describeRoute, autoDescribeRoute, Description
-from girder.api.rest import Resource, loadmodel, filtermodel
+from girder.api.rest import Resource, loadmodel, filtermodel, setResponseHeader
 from girder.constants import AccessType, SortDir
-from girder.exceptions import ValidationException, RestException
+from girder.exceptions import ValidationException, RestException, AccessException
 from girder.models.item import Item
 from girder.models.user import User
+from girder.utility import JsonEncoder
 from ..models.annotation import AnnotationSchema, Annotation
+from ..models.annotationelement import Annotationelement
 
 
 class AnnotationResource(Resource):
@@ -51,6 +54,8 @@ class AnnotationResource(Resource):
         self.route('DELETE', (':id',), self.deleteAnnotation)
         self.route('GET', (':id', 'access'), self.getAnnotationAccess)
         self.route('PUT', (':id', 'access'), self.updateAnnotationAccess)
+        self.route('GET', ('item', ':id',), self.getItemAnnotations)
+        self.route('POST', ('item', ':id',), self.createItemAnnotations)
 
     @describeRoute(
         Description('Search for annotations.')
@@ -141,16 +146,70 @@ class AnnotationResource(Resource):
     )
     @access.cookie
     @access.public
-    @filtermodel(model='annotation', plugin='large_image')
     def getAnnotation(self, id, params):
         user = self.getCurrentUser()
-        annotation = Annotation().load(id, region=params, user=user, level=AccessType.READ)
+        return self._getAnnotation(user, id, params)
+
+    def _getAnnotation(self, user, id, params):
+        """
+        Get a generator function that will yield the json of an annotation.
+
+        :param user: the user that needs read access on the annoation and its
+            parent item.
+        :param id: the annotation id.
+        :param params: paging and region parameters for the annotation.
+        :returns: a function that will return a generator.
+        """
+        annotation = Annotation().load(
+            id, region=params, user=user, level=AccessType.READ, getElements=False)
         if annotation is None:
             raise RestException('Annotation not found', 404)
         # Ensure that we have read access to the parent item.  We could fail
         # faster when there are permissions issues if we didn't load the
         # annotation elements before checking the item access permissions.
-        return annotation
+        #  This had been done via the filtermodel decorator, but that doesn't
+        # work with yielding the elements one at a time.
+        annotation = Annotation().filter(annotation, self.getCurrentUser())
+
+        annotation['annotation']['elements'] = []
+        breakStr = b'"elements": ['
+        base = json.dumps(annotation, sort_keys=True, allow_nan=False,
+                          cls=JsonEncoder).encode('utf8').split(breakStr)
+
+        def generateResult():
+            info = {}
+            idx = 0
+            yield base[0]
+            yield breakStr
+            collect = []
+            for element in Annotationelement().yieldElements(annotation, params, info):
+                # The json conversion is fastest if we use defaults as much as
+                # possible.  The only value in an annotation element that needs
+                # special handling is the id, so cast that ourselves and then
+                # use a json encoder in the most compact form.
+                element['id'] = str(element['id'])
+                # Use ujson; it is much faster.  The standard json library
+                # could be used in its most default mode instead like so:
+                #   result = json.dumps(element, separators=(',', ':'))
+                # Collect multiple elements before emitting them.  This
+                # balances using less memoryand streaming right away with
+                # efficiency in dumping the json.  Experimentally, 100 is
+                # significantly faster than 10 and not much slower than 1000.
+                collect.append(element)
+                if len(collect) >= 100:
+                    yield (b',' if idx else b'') + ujson.dumps(collect).encode('utf8')[1:-1]
+                    idx += 1
+                    collect = []
+            if len(collect):
+                yield (b',' if idx else b'') + ujson.dumps(collect).encode('utf8')[1:-1]
+            yield base[1].rstrip().rstrip(b'}')
+            yield b', "_elementQuery": '
+            yield json.dumps(
+                info, sort_keys=True, allow_nan=False, cls=JsonEncoder).encode('utf8')
+            yield b'}'
+
+        setResponseHeader('Content-Type', 'application/json')
+        return generateResult
 
     @describeRoute(
         Description('Create an annotation.')
@@ -317,8 +376,13 @@ class AnnotationResource(Resource):
         access = json.loads(params['access'])
         public = self.boolParam('public', params, False)
         annotation = Annotation().setPublic(annotation, public)
-        return Annotation().setAccessList(
-            annotation, access, save=True, user=self.getCurrentUser())
+        annotation = Annotation().setAccessList(
+            annotation, access, save=False, user=self.getCurrentUser())
+        Annotation().update({'_id': annotation['_id']}, {'$set': {
+            key: annotation[key] for key in ('access', 'public', 'publicFlags')
+            if key in annotation
+        }})
+        return annotation
 
     @autoDescribeRoute(
         Description('Get a list of an annotation\'s history.')
@@ -368,3 +432,62 @@ class AnnotationResource(Resource):
         # Don't return the elements -- it can be too verbose
         del annotation['annotation']['elements']
         return annotation
+
+    @autoDescribeRoute(
+        Description('Get all annotations for an item.')
+        .notes('This returns a list of annotation model records.')
+        .modelParam('id', model=Item, level=AccessType.READ)
+        .errorResponse('ID was invalid.')
+        .errorResponse('Read access was denied for the item.', 403)
+    )
+    @access.public
+    def getItemAnnotations(self, item):
+        user = self.getCurrentUser()
+        query = {'_active': {'$ne': False}, 'itemId': item['_id']}
+
+        def generateResult():
+            yield b'['
+            first = True
+            for annotation in Annotation().find(query, limit=0, sort=[('_id', 1)]):
+                if not first:
+                    yield b',\n'
+                try:
+                    annotationGenerator = self._getAnnotation(user, annotation['_id'], {})()
+                except AccessException:
+                    continue
+                for chunk in annotationGenerator:
+                    yield chunk
+                first = False
+            yield b']'
+
+        setResponseHeader('Content-Type', 'application/json')
+        return generateResult
+
+    @autoDescribeRoute(
+        Description('Create multiple annotations on an item.')
+        .modelParam('id', model=Item, level=AccessType.WRITE)
+        .jsonParam('annotations', 'A JSON list of annotation model records or '
+                   'annotations.  If these are complete models, the value of '
+                   'the "annotation" key is used and the other information is '
+                   'ignored (such as original creator ID).', paramType='body',
+                   requireArray=True)
+        .errorResponse('ID was invalid.')
+        .errorResponse('Write access was denied for the item.', 403)
+        .errorResponse('Invalid JSON passed in request body.')
+        .errorResponse('Validation Error: JSON doesn\'t follow schema.')
+    )
+    @access.user
+    def createItemAnnotations(self, item, annotations):
+        user = self.getCurrentUser()
+        for entry in annotations:
+            if not isinstance(entry, dict):
+                raise RestException('Entries in the annotation list must be JSON objects.')
+            annotation = entry.get('annotation', entry)
+            try:
+                Annotation().createAnnotation(item, user, annotation)
+            except ValidationException as exc:
+                logger.exception('Failed to validate annotation')
+                raise RestException(
+                    'Validation Error: JSON doesn\'t follow schema (%r).' % (
+                        exc.args, ))
+        return len(annotations)

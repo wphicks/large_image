@@ -17,10 +17,17 @@
 #  limitations under the License.
 ##############################################################################
 
-import server
-from server import tilesource
-from server import cache_util
+try:
+    from . import server   # Works in non-editable install
+    from .server import tilesource
+    from .server import cache_util
+    from .server.cache_util import cachefactory as config
+except ImportError:
+    import server          # Works in editable install
+    from server import tilesource
+    from server import cache_util
+    from server.cache_util import cachefactory as config
 
 getTileSource = tilesource.getTileSource  # noqa
 
-__all__ = ['server', 'tilesource', 'getTileSource', 'cache_util']
+__all__ = ['server', 'tilesource', 'getTileSource', 'cache_util', 'config']

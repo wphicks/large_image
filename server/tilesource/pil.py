@@ -19,6 +19,7 @@
 
 import json
 import math
+import os
 import six
 
 import PIL.Image
@@ -85,7 +86,8 @@ class PILFileTileSource(FileTileSource):
 
     def __init__(self, path, maxSize=None, **kwargs):
         """
-        Initialize the tile class.
+        Initialize the tile class.  See the base class for other available
+        parameters.
 
         :param path: the associated file path.
         :param maxSize: either a number or an object with {'width': (width),
@@ -105,6 +107,11 @@ class PILFileTileSource(FileTileSource):
 
         largeImagePath = self._getLargeImagePath()
 
+        # Some formats shouldn't be read this way, even if they could.  For
+        # instances, mirax (mrxs) files look like JPEGs, but opening them as
+        # such misses most of the data.
+        if os.path.splitext(largeImagePath)[1] in ('.mrxs', ):
+            raise TileSourceException('File cannot be opened via PIL.')
         try:
             self._pilImage = PIL.Image.open(largeImagePath)
         except IOError:
@@ -168,7 +175,7 @@ if girder:
         @staticmethod
         def getLRUHash(*args, **kwargs):
             return strhash(
-                super(PILGirderTileSource, PILGirderTileSource).getLRUHash(
+                GirderTileSource.getLRUHash(
                     *args, **kwargs),
                 kwargs.get('maxSize', args[1] if len(args) >= 2 else None))
 
