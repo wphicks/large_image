@@ -1,13 +1,14 @@
 import _ from 'underscore';
 
 import { wrap } from 'girder/utilities/PluginUtils';
-import { apiRoot } from 'girder/rest';
+import { apiRoot,restRequest } from 'girder/rest';
 import { getCurrentUser } from 'girder/auth';
 import { AccessType } from 'girder/constants';
 import ItemListWidget from 'girder/views/widgets/ItemListWidget';
 
 import largeImageConfig from './configView';
 import '../stylesheets/itemList.styl';
+
 
 wrap(ItemListWidget, 'render', function (render) {
     /* Chrome limits the number of connections to a single domain, which means
@@ -38,7 +39,14 @@ wrap(ItemListWidget, 'render', function (render) {
 
     function addLargeImageDetails(item, container, parent, extraInfo) {
         var elem;
-        elem = $('<div class="large_image_thumbnail"/>');
+        elem = $('<div class="large_image_thumbnail"/>').css({'position':'relative'});
+
+	restRequest({url: 'annotation', data: {itemId: item.id, limit: 1}}).done((result) => {
+            if(result.length > 0){
+		elem.append($('<i class="icon-star"/>').css({'position':'absolute','top':'0px','left':'0px'}));
+	    }
+        });
+
         container.append(elem);
         /* We store the desired src attribute in deferred-src until we actually
          * load the image. */
