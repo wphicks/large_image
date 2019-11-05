@@ -50,7 +50,7 @@ class AnnotationSchema(object):
         'items': {
             'type': 'number'
         },
-        'minItems': 3,
+        'minItems': 2,
         'maxItems': 3,
         'name': 'Coordinate',
         # TODO: define origin for 3D images
@@ -72,6 +72,11 @@ class AnnotationSchema(object):
                    r'rgba\(\d+,\s*\d+,\s*\d+,\s*(\d?\.|)\d+\))$'
     }
 
+    userSchema = {
+        'type': 'object',
+        'additionalProperties': True
+    }
+
     baseShapeSchema = {
         '$schema': 'http://json-schema.org/schema#',
         'id': '/girder/plugins/large_image/models/base_shape',
@@ -82,6 +87,12 @@ class AnnotationSchema(object):
                 'pattern': '^[0-9a-f]{24}$',
             },
             'type': {'type': 'string'},
+            # airplane feature locations
+            'user': userSchema,
+            'nose': coordSchema,
+            'tail': coordSchema,
+            'left': coordSchema,
+            'right': coordSchema,
             'label': {
                 'type': 'object',
                 'properties': {
@@ -105,6 +116,10 @@ class AnnotationSchema(object):
             'lineWidth': {
                 'type': 'number',
                 'minimum': 0
+            },
+            'vector': coordSchema,
+            'scalar': {
+                'type': 'number'
             },
             'group': {'type': 'string'}
         },
@@ -415,8 +430,7 @@ class Annotation(AccessControlledModel):
             ([
                 ('_annotationId', SortDir.ASCENDING),
                 ('_version', SortDir.DESCENDING),
-            ], {}),
-            'updated',
+            ], {})
         ])
         self.ensureTextIndex({
             'annotation.name': 10,
